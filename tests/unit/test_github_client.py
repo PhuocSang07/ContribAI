@@ -70,7 +70,9 @@ class TestClientHeaders:
 class TestContributingGuide:
     @pytest.mark.asyncio
     async def test_returns_none_when_not_found(self, client):
-        client.get_file_content = AsyncMock(side_effect=GitHubAPIError("Not found", status_code=404))
+        client.get_file_content = AsyncMock(
+            side_effect=GitHubAPIError("Not found", status_code=404)
+        )
         result = await client.get_contributing_guide("owner", "repo")
         assert result is None
 

@@ -87,32 +87,39 @@ class TestPipelineDryRun:
         pipeline._discovery.discover = AsyncMock(return_value=[mock_repo])
 
         pipeline._analyzer = AsyncMock()
-        pipeline._analyzer.analyze = AsyncMock(return_value=AnalysisResult(
-            repo=mock_repo,
-            findings=[sample_finding],
-            analyzed_files=1,
-            analysis_duration_sec=0.5,
-        ))
+        pipeline._analyzer.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                repo=mock_repo,
+                findings=[sample_finding],
+                analyzed_files=1,
+                analysis_duration_sec=0.5,
+            )
+        )
 
         pipeline._generator = AsyncMock()
         pipeline._generator.generate = AsyncMock(return_value=sample_contribution)
 
         pipeline._pr_manager = AsyncMock()
-        pipeline._pr_manager.create_pr = AsyncMock(return_value=PRResult(
-            repo=mock_repo,
-            contribution=sample_contribution,
-            pr_number=42,
-            pr_url="https://github.com/test/pr/42",
-        ))
+        pipeline._pr_manager.create_pr = AsyncMock(
+            return_value=PRResult(
+                repo=mock_repo,
+                contribution=sample_contribution,
+                pr_number=42,
+                pr_url="https://github.com/test/pr/42",
+            )
+        )
 
         # Use real Memory with tmp_path
         from contribai.orchestrator.memory import Memory
+
         pipeline._memory = Memory(pipeline_config.storage.resolved_db_path)
         await pipeline._memory.init()
 
-        pipeline._github.get_file_tree = AsyncMock(return_value=[
-            FileNode(path="main.py", type="blob", size=500, sha="abc"),
-        ])
+        pipeline._github.get_file_tree = AsyncMock(
+            return_value=[
+                FileNode(path="main.py", type="blob", size=500, sha="abc"),
+            ]
+        )
         pipeline._github.get_file_content = AsyncMock(return_value="import unused\nprint('hello')")
 
         # Patch _init_components to be a no-op (components already set)
@@ -148,12 +155,15 @@ class TestPipelineDryRun:
         )
 
         pipeline._analyzer = AsyncMock()
-        pipeline._analyzer.analyze = AsyncMock(return_value=AnalysisResult(
-            repo=mock_repo,
-            findings=[finding],
-        ))
+        pipeline._analyzer.analyze = AsyncMock(
+            return_value=AnalysisResult(
+                repo=mock_repo,
+                findings=[finding],
+            )
+        )
 
         from contribai.orchestrator.memory import Memory
+
         pipeline._memory = Memory(pipeline_config.storage.resolved_db_path)
         await pipeline._memory.init()
 

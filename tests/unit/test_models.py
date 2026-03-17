@@ -81,10 +81,20 @@ class TestAnalysisResult:
 
     def test_filter_by_type(self, sample_repo):
         findings = [
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.HIGH,
-                    title="Sec", description="", file_path="a.py"),
-            Finding(type=ContributionType.DOCS_IMPROVE, severity=Severity.LOW,
-                    title="Doc", description="", file_path="b.py"),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.HIGH,
+                title="Sec",
+                description="",
+                file_path="a.py",
+            ),
+            Finding(
+                type=ContributionType.DOCS_IMPROVE,
+                severity=Severity.LOW,
+                title="Doc",
+                description="",
+                file_path="b.py",
+            ),
         ]
         result = AnalysisResult(repo=sample_repo, findings=findings)
         sec = result.filter_by_type(ContributionType.SECURITY_FIX)
@@ -93,12 +103,27 @@ class TestAnalysisResult:
 
     def test_filter_by_severity(self, sample_repo):
         findings = [
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.LOW,
-                    title="Low", description="", file_path="a.py"),
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.HIGH,
-                    title="High", description="", file_path="b.py"),
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.CRITICAL,
-                    title="Crit", description="", file_path="c.py"),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.LOW,
+                title="Low",
+                description="",
+                file_path="a.py",
+            ),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.HIGH,
+                title="High",
+                description="",
+                file_path="b.py",
+            ),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.CRITICAL,
+                title="Crit",
+                description="",
+                file_path="c.py",
+            ),
         ]
         result = AnalysisResult(repo=sample_repo, findings=findings)
         high_plus = result.filter_by_severity(Severity.HIGH)

@@ -95,7 +95,7 @@ class TestGeneratePRTitle:
 
 class TestParseChanges:
     def test_parse_json_response(self, generator):
-        response = '''Here is the fix:
+        response = """Here is the fix:
 ```json
 {
   "changes": [
@@ -106,16 +106,16 @@ class TestParseChanges:
     }
   ]
 }
-```'''
+```"""
         changes = generator._parse_changes(response)
         assert len(changes) == 1
         assert changes[0].path == "src/config.py"
         assert not changes[0].is_new_file
 
     def test_parse_new_file(self, generator):
-        response = '''```json
+        response = """```json
 {"changes": [{"path": "new_file.py", "content": "print('hello')", "is_new_file": true}]}
-```'''
+```"""
         changes = generator._parse_changes(response)
         assert len(changes) == 1
         assert changes[0].is_new_file is True

@@ -30,10 +30,12 @@ def good_contribution():
         contribution_type=ContributionType.SECURITY_FIX,
         title="Fix SQL injection in db.py",
         description="Parameterized all raw SQL queries to prevent SQL injection attacks.",
-        changes=[FileChange(
-            path="db.py",
-            new_content="""import sqlite3\n\ndef query(db, user_id):\n    cursor = db.execute('SELECT * FROM users WHERE id = ?', (user_id,))\n    return cursor.fetchall()\n""",
-        )],
+        changes=[
+            FileChange(
+                path="db.py",
+                new_content="""import sqlite3\n\ndef query(db, user_id):\n    cursor = db.execute('SELECT * FROM users WHERE id = ?', (user_id,))\n    return cursor.fetchall()\n""",
+            )
+        ],
         commit_message="fix(security): parameterize sql queries to prevent injection",
         branch_name="contribai/fix/sql-injection",
     )
@@ -69,10 +71,19 @@ class TestQualityScorer:
 
     def test_empty_changes_fail(self, scorer):
         contrib = Contribution(
-            finding=Finding(type=ContributionType.BUG_FIX if hasattr(ContributionType, "BUG_FIX") else ContributionType.CODE_QUALITY,
-                            severity=Severity.LOW, title="X", description="X", file_path="x.py"),
+            finding=Finding(
+                type=ContributionType.BUG_FIX
+                if hasattr(ContributionType, "BUG_FIX")
+                else ContributionType.CODE_QUALITY,
+                severity=Severity.LOW,
+                title="X",
+                description="X",
+                file_path="x.py",
+            ),
             contribution_type=ContributionType.CODE_QUALITY,
-            title="X", description="X", changes=[],
+            title="X",
+            description="X",
+            changes=[],
         )
         report = scorer.evaluate(contrib)
         assert report.checks["has_changes"].passed is False

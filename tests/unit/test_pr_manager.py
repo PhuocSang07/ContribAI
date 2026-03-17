@@ -98,24 +98,24 @@ class TestGetPRStatus:
 
     @pytest.mark.asyncio
     async def test_merged_pr(self, pr_manager):
-        pr_manager._github._get = AsyncMock(
-            return_value={"state": "closed", "merged": True}
-        )
+        pr_manager._github._get = AsyncMock(return_value={"state": "closed", "merged": True})
         status = await pr_manager.get_pr_status("owner", "repo", 1)
         assert status == PRStatus.MERGED
 
     @pytest.mark.asyncio
     async def test_closed_pr(self, pr_manager):
-        pr_manager._github._get = AsyncMock(
-            return_value={"state": "closed", "merged": False}
-        )
+        pr_manager._github._get = AsyncMock(return_value={"state": "closed", "merged": False})
         status = await pr_manager.get_pr_status("owner", "repo", 1)
         assert status == PRStatus.CLOSED
 
     @pytest.mark.asyncio
     async def test_review_requested(self, pr_manager):
         pr_manager._github._get = AsyncMock(
-            return_value={"state": "open", "merged": False, "requested_reviewers": [{"login": "reviewer"}]}
+            return_value={
+                "state": "open",
+                "merged": False,
+                "requested_reviewers": [{"login": "reviewer"}],
+            }
         )
         status = await pr_manager.get_pr_status("owner", "repo", 1)
         assert status == PRStatus.REVIEW_REQUESTED

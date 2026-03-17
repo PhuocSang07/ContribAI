@@ -113,10 +113,20 @@ class TestDeduplicate:
 
     def test_keeps_different_findings(self, analyzer):
         findings = [
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.HIGH,
-                    title="Issue A", description="", file_path="a.py"),
-            Finding(type=ContributionType.CODE_QUALITY, severity=Severity.MEDIUM,
-                    title="Issue B", description="", file_path="b.py"),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.HIGH,
+                title="Issue A",
+                description="",
+                file_path="a.py",
+            ),
+            Finding(
+                type=ContributionType.CODE_QUALITY,
+                severity=Severity.MEDIUM,
+                title="Issue B",
+                description="",
+                file_path="b.py",
+            ),
         ]
         result = analyzer._deduplicate(findings)
         assert len(result) == 2
@@ -125,12 +135,27 @@ class TestDeduplicate:
 class TestFilterSeverity:
     def test_filters_below_threshold(self, analyzer):
         findings = [
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.LOW,
-                    title="Low", description="", file_path="a.py"),
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.MEDIUM,
-                    title="Medium", description="", file_path="b.py"),
-            Finding(type=ContributionType.SECURITY_FIX, severity=Severity.HIGH,
-                    title="High", description="", file_path="c.py"),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.LOW,
+                title="Low",
+                description="",
+                file_path="a.py",
+            ),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.MEDIUM,
+                title="Medium",
+                description="",
+                file_path="b.py",
+            ),
+            Finding(
+                type=ContributionType.SECURITY_FIX,
+                severity=Severity.HIGH,
+                title="High",
+                description="",
+                file_path="c.py",
+            ),
         ]
         result = analyzer._filter_severity(findings)
         assert len(result) == 2  # medium threshold: medium + high

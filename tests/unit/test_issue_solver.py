@@ -14,17 +14,26 @@ def solver(mock_llm, mock_github):
 
 @pytest.fixture
 def bug_issue():
-    return Issue(number=1, title="App crashes on login", body="TypeError when user logs in", labels=["bug"])
+    return Issue(
+        number=1, title="App crashes on login", body="TypeError when user logs in", labels=["bug"]
+    )
 
 
 @pytest.fixture
 def feature_issue():
-    return Issue(number=2, title="Add dark mode support", body="Please add dark theme toggle", labels=["enhancement"])
+    return Issue(
+        number=2,
+        title="Add dark mode support",
+        body="Please add dark theme toggle",
+        labels=["enhancement"],
+    )
 
 
 @pytest.fixture
 def docs_issue():
-    return Issue(number=3, title="Fix typo in README", body="Line 42 has a typo", labels=["documentation"])
+    return Issue(
+        number=3, title="Fix typo in README", body="Line 42 has a typo", labels=["documentation"]
+    )
 
 
 @pytest.fixture
@@ -76,7 +85,8 @@ class TestEstimateComplexity:
 
     def test_many_file_references(self, solver):
         issue = Issue(
-            number=3, title="Fix stuff",
+            number=3,
+            title="Fix stuff",
             body="Change src/a.py src/b.py src/c.py src/d.py src/e.py",
             labels=[],
         )
@@ -91,7 +101,8 @@ class TestFilterSolvable:
 
     def test_filters_complex(self, solver):
         complex_issue = Issue(
-            number=99, title="Redesign everything",
+            number=99,
+            title="Redesign everything",
             body="x" * 10000 + " file1.py file2.py file3.py file4.py",
             labels=[],
         )
@@ -102,11 +113,13 @@ class TestFilterSolvable:
 class TestSolveIssue:
     @pytest.mark.asyncio
     async def test_solve_returns_finding(self, solver, bug_issue, sample_repo):
-        solver._llm.complete = AsyncMock(return_value="""FILE_PATH: src/auth.py
+        solver._llm.complete = AsyncMock(
+            return_value="""FILE_PATH: src/auth.py
 SEVERITY: high
 TITLE: Fix TypeError in login handler
 DESCRIPTION: The login handler raises TypeError when user object is None
-SUGGESTION: Add null check before accessing user properties""")
+SUGGESTION: Add null check before accessing user properties"""
+        )
 
         context = RepoContext(
             repo=sample_repo,
