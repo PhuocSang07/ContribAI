@@ -91,9 +91,7 @@ class Memory:
         )
         return await cursor.fetchone() is not None
 
-    async def record_analysis(
-        self, full_name: str, language: str, stars: int, findings_count: int
-    ):
+    async def record_analysis(self, full_name: str, language: str, stars: int, findings_count: int):
         """Record that a repo was analyzed."""
         await self._db.execute(
             """INSERT OR REPLACE INTO analyzed_repos

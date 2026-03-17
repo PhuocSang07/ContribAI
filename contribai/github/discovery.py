@@ -117,9 +117,7 @@ class RepoDiscovery:
 
             # Check last activity
             if repo.last_push_at:
-                cutoff = datetime.now(UTC) - timedelta(
-                    days=criteria.min_last_activity_days
-                )
+                cutoff = datetime.now(UTC) - timedelta(days=criteria.min_last_activity_days)
                 if repo.last_push_at < cutoff:
                     logger.debug("Skipping %s: inactive", repo.full_name)
                     continue

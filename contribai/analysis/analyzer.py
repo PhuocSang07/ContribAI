@@ -31,10 +31,35 @@ logger = logging.getLogger(__name__)
 
 # File extensions we can meaningfully analyze
 ANALYZABLE_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".rs", ".rb",
-    ".php", ".c", ".cpp", ".h", ".hpp", ".cs", ".swift", ".kt",
-    ".html", ".css", ".scss", ".vue", ".svelte",
-    ".md", ".rst", ".txt", ".yaml", ".yml", ".json", ".toml",
+    ".py",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".java",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".swift",
+    ".kt",
+    ".html",
+    ".css",
+    ".scss",
+    ".vue",
+    ".svelte",
+    ".md",
+    ".rst",
+    ".txt",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".toml",
 }
 
 
@@ -80,9 +105,7 @@ class CodeAnalyzer:
         analyzer_tasks = []
 
         for analyzer_name in self._config.enabled_analyzers:
-            analyzer_tasks.append(
-                self._run_analyzer(analyzer_name, context)
-            )
+            analyzer_tasks.append(self._run_analyzer(analyzer_name, context))
 
         results = await asyncio.gather(*analyzer_tasks, return_exceptions=True)
         for result in results:
@@ -168,9 +191,18 @@ class CodeAnalyzer:
     def _prioritize_files(self, files: list[FileNode]) -> list[FileNode]:
         """Prioritize files for analysis (entry points, configs, core modules first)."""
         priority_patterns = [
-            "main.py", "app.py", "index.ts", "index.js", "server.py",
-            "setup.py", "pyproject.toml", "package.json",
-            "config", "settings", "auth", "security",
+            "main.py",
+            "app.py",
+            "index.ts",
+            "index.js",
+            "server.py",
+            "setup.py",
+            "pyproject.toml",
+            "package.json",
+            "config",
+            "settings",
+            "auth",
+            "security",
         ]
 
         def file_priority(node: FileNode) -> int:
@@ -182,9 +214,7 @@ class CodeAnalyzer:
 
         return sorted(files, key=file_priority)
 
-    async def _run_analyzer(
-        self, name: str, context: RepoContext
-    ) -> list[Finding]:
+    async def _run_analyzer(self, name: str, context: RepoContext) -> list[Finding]:
         """Run a single LLM-powered analyzer."""
         prompts = {
             "security": self._security_prompt,
@@ -303,9 +333,7 @@ class CodeAnalyzer:
             parts.append(f"### {path}\n```\n{truncated}\n```")
         return "\n\n".join(parts) if parts else "No source files available."
 
-    def _parse_findings(
-        self, response: str, analyzer_name: str, ctx: RepoContext
-    ) -> list[Finding]:
+    def _parse_findings(self, response: str, analyzer_name: str, ctx: RepoContext) -> list[Finding]:
         """Parse LLM response into Finding objects."""
         import yaml
 

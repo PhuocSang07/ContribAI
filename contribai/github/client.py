@@ -53,9 +53,7 @@ class GitHubClient:
             reset = response.headers.get("x-ratelimit-reset")
             if remaining == "0":
                 raise RateLimitError(reset_at=int(reset) if reset else None)
-            raise GitHubAPIError(
-                f"Forbidden: {response.text}", status_code=403
-            )
+            raise GitHubAPIError(f"Forbidden: {response.text}", status_code=403)
 
         if response.status_code == 404:
             raise GitHubAPIError(f"Not found: {url}", status_code=404)
@@ -135,8 +133,10 @@ class GitHubClient:
         )
         return [
             FileNode(
-                path=item["path"], type=item["type"],
-                size=item.get("size", 0), sha=item["sha"],
+                path=item["path"],
+                type=item["type"],
+                size=item.get("size", 0),
+                sha=item["sha"],
             )
             for item in data.get("tree", [])
         ]

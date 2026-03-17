@@ -28,9 +28,7 @@ class PRManager:
             self._user = await self._github.get_authenticated_user()
         return self._user
 
-    async def create_pr(
-        self, contribution: Contribution, target_repo: Repository
-    ) -> PRResult:
+    async def create_pr(self, contribution: Contribution, target_repo: Repository) -> PRResult:
         """Create a PR from a generated contribution.
 
         Full workflow:
@@ -58,9 +56,7 @@ class PRManager:
                 sha = None
                 if not change.is_new_file:
                     try:
-                        await self._github.get_file_content(
-                            fork_owner, fork_name, change.path
-                        )
+                        await self._github.get_file_content(fork_owner, fork_name, change.path)
                         # We need the SHA to update - fetch via contents API
 
                         resp = await self._github._get(

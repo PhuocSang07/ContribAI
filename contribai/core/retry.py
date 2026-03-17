@@ -58,7 +58,7 @@ def async_retry(
                     if attempt >= max_retries:
                         break
 
-                    delay = min(base_delay * (backoff_factor ** attempt), max_delay)
+                    delay = min(base_delay * (backoff_factor**attempt), max_delay)
                     # Add jitter (±25%)
                     import random
 

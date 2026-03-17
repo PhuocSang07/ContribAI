@@ -350,13 +350,15 @@ def stats(ctx):
 
     s = asyncio.run(_get_stats())
 
-    console.print(Panel(
-        f"📊 [bold]Total Runs[/bold]: {s['total_runs']}\n"
-        f"🔬 [bold]Repos Analyzed[/bold]: {s['total_repos_analyzed']}\n"
-        f"📤 [bold]PRs Submitted[/bold]: {s['total_prs_submitted']}\n"
-        f"✅ [bold]PRs Merged[/bold]: {s['prs_merged']}",
-        title="ContribAI Statistics",
-    ))
+    console.print(
+        Panel(
+            f"📊 [bold]Total Runs[/bold]: {s['total_runs']}\n"
+            f"🔬 [bold]Repos Analyzed[/bold]: {s['total_repos_analyzed']}\n"
+            f"📤 [bold]PRs Submitted[/bold]: {s['total_prs_submitted']}\n"
+            f"✅ [bold]PRs Merged[/bold]: {s['prs_merged']}",
+            title="ContribAI Statistics",
+        )
+    )
 
 
 @cli.command("config")
@@ -364,37 +366,42 @@ def stats(ctx):
 def show_config(ctx):
     """Show current configuration."""
     config = load_config(ctx.obj["config_path"])
-    console.print(Panel(
-        f"[bold]GitHub[/bold]\n"
-        f"  Token: {'****' + config.github.token[-4:] if config.github.token else 'NOT SET'}\n"
-        f"  Max repos/run: {config.github.max_repos_per_run}\n"
-        f"  Max PRs/day: {config.github.max_prs_per_day}\n\n"
-        f"[bold]LLM[/bold]\n"
-        f"  Provider: {config.llm.provider}\n"
-        f"  Model: {config.llm.model}\n"
-        f"  API Key: {'****' + config.llm.api_key[-4:] if config.llm.api_key else 'NOT SET'}\n\n"
-        f"[bold]Discovery[/bold]\n"
-        f"  Languages: {', '.join(config.discovery.languages)}\n"
-        f"  Stars: {config.discovery.stars_range}\n\n"
-        f"[bold]Analysis[/bold]\n"
-        f"  Analyzers: {', '.join(config.analysis.enabled_analyzers)}\n"
-        f"  Threshold: {config.analysis.severity_threshold}",
-        title="⚙️ ContribAI Configuration",
-    ))
+    console.print(
+        Panel(
+            f"[bold]GitHub[/bold]\n"
+            f"  Token: {'****' + config.github.token[-4:] if config.github.token else 'NOT SET'}\n"
+            f"  Max repos/run: {config.github.max_repos_per_run}\n"
+            f"  Max PRs/day: {config.github.max_prs_per_day}\n\n"
+            f"[bold]LLM[/bold]\n"
+            f"  Provider: {config.llm.provider}\n"
+            f"  Model: {config.llm.model}\n"
+            f"  API Key: "
+            f"{'****' + config.llm.api_key[-4:] if config.llm.api_key else 'NOT SET'}\n\n"
+            f"[bold]Discovery[/bold]\n"
+            f"  Languages: {', '.join(config.discovery.languages)}\n"
+            f"  Stars: {config.discovery.stars_range}\n\n"
+            f"[bold]Analysis[/bold]\n"
+            f"  Analyzers: {', '.join(config.analysis.enabled_analyzers)}\n"
+            f"  Threshold: {config.analysis.severity_threshold}",
+            title="⚙️ ContribAI Configuration",
+        )
+    )
 
 
 def _print_result(result, dry_run: bool):
     """Print pipeline execution results."""
 
     console.print()
-    console.print(Panel(
-        f"📦 Repos analyzed: [bold]{result.repos_analyzed}[/bold]\n"
-        f"🔍 Issues found: [bold]{result.findings_total}[/bold]\n"
-        f"🛠️  Contributions generated: [bold]{result.contributions_generated}[/bold]\n"
-        f"📤 PRs created: [bold]{result.prs_created}[/bold]"
-        + (f"\n❌ Errors: [red]{len(result.errors)}[/red]" if result.errors else ""),
-        title="✅ Pipeline Complete" + (" (DRY RUN)" if dry_run else ""),
-    ))
+    console.print(
+        Panel(
+            f"📦 Repos analyzed: [bold]{result.repos_analyzed}[/bold]\n"
+            f"🔍 Issues found: [bold]{result.findings_total}[/bold]\n"
+            f"🛠️  Contributions generated: [bold]{result.contributions_generated}[/bold]\n"
+            f"📤 PRs created: [bold]{result.prs_created}[/bold]"
+            + (f"\n❌ Errors: [red]{len(result.errors)}[/red]" if result.errors else ""),
+            title="✅ Pipeline Complete" + (" (DRY RUN)" if dry_run else ""),
+        )
+    )
 
     if result.prs:
         console.print("\n[bold]Created PRs:[/bold]")

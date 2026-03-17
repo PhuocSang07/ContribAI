@@ -321,8 +321,7 @@ def create_llm_provider(config: LLMConfig) -> LLMProvider:
     provider_cls = _PROVIDERS.get(config.provider)
     if not provider_cls:
         raise LLMError(
-            f"Unknown LLM provider: {config.provider}. "
-            f"Available: {', '.join(_PROVIDERS.keys())}"
+            f"Unknown LLM provider: {config.provider}. Available: {', '.join(_PROVIDERS.keys())}"
         )
     logger.info("Using LLM provider: %s (model: %s)", config.provider, config.model)
     return provider_cls(config)

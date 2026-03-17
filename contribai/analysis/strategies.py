@@ -84,9 +84,8 @@ class DjangoStrategy(FrameworkStrategy):
         # Check dependencies
         for path, content in context.relevant_files.items():
             if (
-                ("requirements" in path.lower() or path == "pyproject.toml")
-                and "django" in content.lower()
-            ):
+                "requirements" in path.lower() or path == "pyproject.toml"
+            ) and "django" in content.lower():
                 return FrameworkInfo(name="Django", config_file=path)
         return None
 
@@ -103,13 +102,15 @@ class DjangoStrategy(FrameworkStrategy):
 
     def get_critical_files(self, context: RepoContext) -> list[str]:
         patterns = [
-            "settings.py", "urls.py", "views.py",
-            "models.py", "forms.py", "admin.py", "serializers.py",
+            "settings.py",
+            "urls.py",
+            "views.py",
+            "models.py",
+            "forms.py",
+            "admin.py",
+            "serializers.py",
         ]
-        return [
-            f.path for f in context.file_tree
-            if any(f.path.endswith(p) for p in patterns)
-        ]
+        return [f.path for f in context.file_tree if any(f.path.endswith(p) for p in patterns)]
 
 
 class FlaskStrategy(FrameworkStrategy):

@@ -131,7 +131,7 @@ class IssueSolver:
 
         # Multiple file references = complex
         if issue.body:
-            file_refs = re.findall(r'[\w/]+\.\w{1,4}', issue.body)
+            file_refs = re.findall(r"[\w/]+\.\w{1,4}", issue.body)
             if len(file_refs) > 3:
                 score += 1
 
@@ -184,9 +184,7 @@ class IssueSolver:
         contrib_type = CATEGORY_TO_CONTRIB.get(category, ContributionType.CODE_QUALITY)
 
         # Build context prompt
-        file_tree_str = "\n".join(
-            f"  {f.path}" for f in context.file_tree[:50] if f.type == "blob"
-        )
+        file_tree_str = "\n".join(f"  {f.path}" for f in context.file_tree[:50] if f.type == "blob")
 
         relevant_code = ""
         for path, content in list(context.relevant_files.items())[:3]:
@@ -200,9 +198,9 @@ class IssueSolver:
 ## Repository: {repo.full_name} ({repo.language})
 
 ## Issue #{issue.number}: {issue.title}
-{issue.body or 'No description provided.'}
+{issue.body or "No description provided."}
 
-## Labels: {', '.join(issue.labels) if issue.labels else 'none'}
+## Labels: {", ".join(issue.labels) if issue.labels else "none"}
 
 ## File Tree:
 {file_tree_str}

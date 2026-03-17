@@ -78,9 +78,7 @@ class QualityScorer:
 
     def _check_has_changes(self, c: Contribution) -> CheckResult:
         """At least one meaningful file change."""
-        has = len(c.changes) > 0 and any(
-            len(ch.new_content.strip()) > 0 for ch in c.changes
-        )
+        has = len(c.changes) > 0 and any(len(ch.new_content.strip()) > 0 for ch in c.changes)
         return CheckResult(
             name="has_changes",
             passed=has,
@@ -96,12 +94,16 @@ class QualityScorer:
             return CheckResult("change_size", False, 0.0, "Empty changes")
         elif total_lines < 3:
             return CheckResult(
-                "change_size", False, 0.3,
+                "change_size",
+                False,
+                0.3,
                 f"Very small change ({total_lines} lines)",
             )
         elif total_lines > 500:
             return CheckResult(
-                "change_size", False, 0.4,
+                "change_size",
+                False,
+                0.4,
                 f"Very large change ({total_lines} lines)",
             )
         elif total_lines > 200:
@@ -116,7 +118,7 @@ class QualityScorer:
             return CheckResult("commit_message", False, 0.0, "Empty commit message")
 
         # Check conventional commit format: type: description
-        conventional = re.match(r'^(feat|fix|docs|refactor|perf|test|chore)\(?.*\)?: .+', msg)
+        conventional = re.match(r"^(feat|fix|docs|refactor|perf|test|chore)\(?.*\)?: .+", msg)
         if conventional:
             return CheckResult("commit_message", True, 1.0, "Follows conventional commits")
 
@@ -137,14 +139,14 @@ class QualityScorer:
     def _check_no_debug_code(self, c: Contribution) -> CheckResult:
         """No debug statements in generated code."""
         debug_patterns = [
-            r'\bprint\s*\(',
-            r'\bconsole\.log\s*\(',
-            r'\bdebugger\b',
-            r'\bpdb\.set_trace\(',
-            r'\bbreakpoint\(\)',
-            r'#\s*TODO\b',
-            r'#\s*FIXME\b',
-            r'#\s*HACK\b',
+            r"\bprint\s*\(",
+            r"\bconsole\.log\s*\(",
+            r"\bdebugger\b",
+            r"\bpdb\.set_trace\(",
+            r"\bbreakpoint\(\)",
+            r"#\s*TODO\b",
+            r"#\s*FIXME\b",
+            r"#\s*HACK\b",
         ]
 
         issues = []
@@ -168,13 +170,13 @@ class QualityScorer:
     def _check_no_placeholders(self, c: Contribution) -> CheckResult:
         """No placeholder text in generated code."""
         placeholder_patterns = [
-            r'YOUR_.*_HERE',
-            r'REPLACE_THIS',
-            r'PLACEHOLDER',
-            r'XXX',
-            r'lorem ipsum',
-            r'example\.com',
-            r'foo\s*bar',
+            r"YOUR_.*_HERE",
+            r"REPLACE_THIS",
+            r"PLACEHOLDER",
+            r"XXX",
+            r"lorem ipsum",
+            r"example\.com",
+            r"foo\s*bar",
         ]
 
         for change in c.changes:
@@ -182,7 +184,9 @@ class QualityScorer:
             for pattern in placeholder_patterns:
                 if re.search(pattern, content_lower, re.IGNORECASE):
                     return CheckResult(
-                        "no_placeholders", False, 0.2,
+                        "no_placeholders",
+                        False,
+                        0.2,
                         f"Found placeholder: {pattern} in {change.path}",
                     )
 
@@ -205,6 +209,8 @@ class QualityScorer:
             return CheckResult("file_coherence", True, 0.8, "Different file but type allows it")
 
         return CheckResult(
-            "file_coherence", False, 0.4,
+            "file_coherence",
+            False,
+            0.4,
             f"Finding in {finding_file} but changes in {changed_files}",
         )
