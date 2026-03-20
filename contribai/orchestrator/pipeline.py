@@ -313,7 +313,7 @@ class ContribPipeline:
                         await asyncio.sleep(delay_sec)
                     continue
 
-                for repo in targets[:2]:
+                for repo in targets[:3]:
                     if remaining <= 0 and not dry_run:
                         break
                     try:
@@ -399,6 +399,15 @@ class ContribPipeline:
         result = PipelineResult()
         logger.info("=" * 60)
         logger.info("📦 Processing: %s", repo.full_name)
+
+        # Check AI policy — skip repos that ban AI-generated PRs
+        if await self._check_ai_policy(repo):
+            logger.warning(
+                "🚫 %s has an AI policy that bans AI PRs, skipping.",
+                repo.full_name,
+            )
+            result.repos_analyzed = 1
+            return result
 
         # Fetch repo guidelines (CONTRIBUTING.md, PR template)
         guidelines = await fetch_repo_guidelines(self._github, repo.owner, repo.name)
@@ -533,6 +542,15 @@ class ContribPipeline:
 
         # Validate findings against full file content to filter false positives
         validated_findings = await self._validate_findings(filtered_findings, relevant_files)
+
+        # Limit to max 2 findings per repo to avoid spamming
+        if len(validated_findings) > 2:
+            logger.info(
+                "📉 Limiting to 2 findings per repo (had %d)",
+                len(validated_findings),
+            )
+            validated_findings = validated_findings[:2]
+
         logger.info(
             "🔎 Validated %d/%d findings (filtered %d false positives)",
             len(validated_findings),
@@ -691,6 +709,68 @@ class ContribPipeline:
 
         return validated
 
+    async def _check_ai_policy(self, repo: Repository) -> bool:
+        """Check if a repo has an AI policy that bans AI-generated PRs.
+
+        Checks:
+        - AI_POLICY.md or .github/AI_POLICY.md
+        - Keywords in CONTRIBUTING.md suggesting AI PRs are banned
+
+        Returns True if the repo bans AI PRs.
+        """
+        ai_policy_paths = [
+            "AI_POLICY.md",
+            ".github/AI_POLICY.md",
+            ".github/ai_policy.md",
+        ]
+
+        for path in ai_policy_paths:
+            try:
+                content = await self._github.get_file_content(
+                    repo.owner, repo.name, path
+                )
+                if content:
+                    content_lower = content.lower()
+                    # Check for ban keywords
+                    ban_keywords = [
+                        "do not accept ai",
+                        "no ai-generated",
+                        "ai contributions are not accepted",
+                        "ban ai",
+                        "prohibit ai",
+                        "ai-generated pull requests will be closed",
+                        "reject ai",
+                    ]
+                    if any(kw in content_lower for kw in ban_keywords):
+                        return True
+            except Exception:
+                pass
+
+        # Also check CONTRIBUTING.md for anti-AI language
+        try:
+            for contrib_path in ["CONTRIBUTING.md", ".github/CONTRIBUTING.md"]:
+                try:
+                    content = await self._github.get_file_content(
+                        repo.owner, repo.name, contrib_path
+                    )
+                    if content:
+                        content_lower = content.lower()
+                        ban_phrases = [
+                            "ai-generated contributions",
+                            "no ai pull requests",
+                            "ban on ai-generated",
+                            "do not submit ai",
+                            "see ai_policy",
+                        ]
+                        if any(phrase in content_lower for phrase in ban_phrases):
+                            return True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return False
+
     async def _check_ci_and_close_if_failed(
         self,
         pr_result: PRResult,
@@ -758,12 +838,10 @@ class ContribPipeline:
 
                 # Auto-close with comment
                 comment = (
-                    "## ❌ Auto-closed: CI checks failed\n\n"
+                    "## Auto-closed: CI checks failed\n\n"
                     f"The following checks failed: **{failed_names}**\n\n"
-                    "This PR was automatically closed because required CI "
-                    "checks did not pass. Apologies for the inconvenience.\n\n"
-                    "---\n"
-                    "*🤖 ContribAI - automated quality gate*"
+                    "Closing this PR since required CI checks did not pass. "
+                    "Sorry for the inconvenience."
                 )
                 await self._github.close_pull_request(
                     repo.owner,

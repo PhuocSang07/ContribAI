@@ -38,7 +38,7 @@ def sample_contribution():
             FileChange(path="db.py", new_content="safe_query()", is_new_file=False),
         ],
         commit_message="fix(security): parameterize sql queries",
-        branch_name="contribai/fix/security/sql-injection",
+        branch_name="fix/security/sql-injection",
     )
 
 
@@ -58,15 +58,16 @@ class TestPRBody:
 
     def test_contains_contribai_attribution(self, pr_manager, sample_contribution):
         body = pr_manager._generate_pr_body(sample_contribution)
-        assert "ContribAI" in body
+        # Stealth mode: no ContribAI branding in PR body
+        assert "ContribAI" not in body
 
     def test_contains_testing_checklist(self, pr_manager, sample_contribution):
         body = pr_manager._generate_pr_body(sample_contribution)
         assert "Testing" in body
 
-    def test_security_emoji(self, pr_manager, sample_contribution):
+    def test_contains_solution(self, pr_manager, sample_contribution):
         body = pr_manager._generate_pr_body(sample_contribution)
-        assert "🔒" in body
+        assert "Solution" in body
 
     def test_docs_emoji(self, pr_manager):
         finding = Finding(
@@ -84,7 +85,7 @@ class TestPRBody:
             changes=[FileChange(path="README.md", new_content="# Docs")],
         )
         body = pr_manager._generate_pr_body(contrib)
-        assert "📝" in body
+        assert "Missing docs" in body
 
 
 class TestGetPRStatus:
