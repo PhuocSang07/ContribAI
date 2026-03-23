@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-03-23
+
+### Added
+- **PR Patrol** (`contribai patrol`): Monitor open PRs for review feedback and auto-respond
+  - Reads maintainer review comments (issue comments + inline code reviews)
+  - LLM-based feedback classification: CODE_CHANGE, QUESTION, STYLE_FIX, APPROVE, REJECT, ALREADY_HANDLED
+  - Generates code fixes from review feedback and pushes to PR branch
+  - Answers maintainer questions with context-aware LLM responses
+  - Re-signs CLA after pushing new commits
+  - `--dry-run` to preview actions, `--pr N` to filter specific PR
+- **GitHub API methods**: `get_pr_reviews()`, `get_pr_review_comments()`, `create_pr_review_comment_reply()`, `get_pr_diff()`
+- **Patrol models**: `FeedbackAction` enum, `FeedbackItem`, `PatrolResult`
+
 ## [2.1.0] - 2026-03-22
 
 ### Added

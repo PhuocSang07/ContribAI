@@ -214,3 +214,41 @@ class RepoContext(BaseModel):
     relevant_files: dict[str, str] = Field(default_factory=dict)  # path -> content
     open_issues: list[Issue] = Field(default_factory=list)
     coding_style: str | None = None  # detected coding conventions
+
+
+# ── Patrol Models ──────────────────────────────────────────────────────────
+
+
+class FeedbackAction(StrEnum):
+    """What action to take for a review comment."""
+
+    CODE_CHANGE = "code_change"
+    QUESTION = "question"
+    STYLE_FIX = "style_fix"
+    APPROVE = "approve"
+    REJECT = "reject"
+    ALREADY_HANDLED = "already_handled"
+
+
+class FeedbackItem(BaseModel):
+    """A classified review comment requiring action."""
+
+    comment_id: int
+    author: str
+    body: str
+    action: FeedbackAction
+    file_path: str | None = None
+    line: int | None = None
+    diff_hunk: str | None = None
+    is_inline: bool = False  # True = code review comment, False = issue comment
+
+
+class PatrolResult(BaseModel):
+    """Result of a patrol run."""
+
+    prs_checked: int = 0
+    fixes_pushed: int = 0
+    replies_sent: int = 0
+    cla_signed: int = 0
+    prs_skipped: int = 0
+    errors: list[str] = Field(default_factory=list)

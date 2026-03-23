@@ -329,6 +329,34 @@ class GitHubClient:
             json={"body": body},
         )
 
+    # ── PR Reviews ─────────────────────────────────────────────────────────
+
+    async def get_pr_reviews(self, owner: str, repo: str, pr_number: int) -> list[dict]:
+        """Get reviews on a pull request (APPROVED, CHANGES_REQUESTED, COMMENTED)."""
+        return await self._get(f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews")
+
+    async def get_pr_review_comments(self, owner: str, repo: str, pr_number: int) -> list[dict]:
+        """Get inline code-level review comments on a pull request."""
+        return await self._get(f"/repos/{owner}/{repo}/pulls/{pr_number}/comments")
+
+    async def create_pr_review_comment_reply(
+        self, owner: str, repo: str, pr_number: int, comment_id: int, body: str
+    ) -> dict:
+        """Reply to an inline review comment on a PR."""
+        return await self._post(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/comments/{comment_id}/replies",
+            json={"body": body},
+        )
+
+    async def get_pr_diff(self, owner: str, repo: str, pr_number: int) -> str:
+        """Get the diff of a pull request."""
+        resp = await self._client.get(
+            f"/repos/{owner}/{repo}/pulls/{pr_number}",
+            headers={"Accept": "application/vnd.github.v3.diff"},
+        )
+        resp.raise_for_status()
+        return resp.text
+
     async def get_authenticated_user(self) -> dict:
         """Get the authenticated user's profile."""
         return await self._get("/user")

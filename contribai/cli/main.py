@@ -208,6 +208,89 @@ def hunt(ctx, rounds, delay, language, mode, dry_run):
 
 
 @cli.command()
+@click.option("--dry-run", is_flag=True, help="Show pending feedback without responding")
+@click.option("--pr", "pr_number", type=int, default=None, help="Check a specific PR number only")
+@click.pass_context
+def patrol(ctx, dry_run, pr_number):
+    """🔍 Patrol: check open PRs for review feedback and auto-respond.
+
+    Scans all open PRs created by ContribAI, reads maintainer review
+    comments, generates code fixes, and pushes updates.
+
+    Actions:
+      - CODE_CHANGE: Generate fix and push to PR branch
+      - QUESTION: Answer maintainer's question
+      - STYLE_FIX: Fix naming/formatting issues
+      - CLA: Re-sign CLA after pushing fixes
+    """
+    print_banner()
+
+    config = load_config(ctx.obj["config_path"])
+
+    if not config.github.token:
+        console.print("[red]❌ GitHub token not configured![/red]")
+        sys.exit(1)
+
+    if not config.llm.api_key and not config.llm.use_vertex:
+        console.print("[red]❌ LLM API key not configured![/red]")
+        sys.exit(1)
+
+    mode = "[yellow]DRY RUN[/yellow]" if dry_run else "[green]LIVE[/green]"
+    console.print(f"\n🔍 PR Patrol ({mode})")
+    if pr_number:
+        console.print(f"   Filtering: PR #{pr_number}")
+    console.print(f"   LLM: {config.llm.provider} ({config.llm.model})\n")
+
+    from contribai.github.client import GitHubClient
+    from contribai.llm.provider import create_llm_provider
+    from contribai.orchestrator.memory import Memory
+    from contribai.pr.patrol import PRPatrol
+
+    async def _patrol():
+        memory = Memory(config.storage.resolved_db_path)
+        await memory.init()
+        github = GitHubClient(token=config.github.token)
+        llm = create_llm_provider(config.llm)
+
+        try:
+            # Get all open PRs from memory
+            pr_records = await memory.get_prs(status="open", limit=100)
+            if not pr_records:
+                console.print("[dim]No open PRs found in database.[/dim]")
+                return
+
+            console.print(f"📋 Found {len(pr_records)} open PR(s) to check\n")
+
+            patrol_engine = PRPatrol(github=github, llm=llm)
+            result = await patrol_engine.patrol(pr_records, dry_run=dry_run, pr_filter=pr_number)
+
+            # Print results
+            console.print()
+            console.print(
+                Panel(
+                    f"🔍 PRs checked: [bold]{result.prs_checked}[/bold]\n"
+                    f"⏭️  PRs skipped: [bold]{result.prs_skipped}[/bold]\n"
+                    f"🛠️  Fixes pushed: [bold]{result.fixes_pushed}[/bold]\n"
+                    f"💬 Replies sent: [bold]{result.replies_sent}[/bold]\n"
+                    f"✍️  CLA signed: [bold]{result.cla_signed}[/bold]"
+                    + (f"\n❌ Errors: [red]{len(result.errors)}[/red]" if result.errors else ""),
+                    title="🔍 Patrol Complete" + (" (DRY RUN)" if dry_run else ""),
+                )
+            )
+
+            if result.errors:
+                for e in result.errors:
+                    console.print(f"  • [red]{e}[/red]")
+
+        finally:
+            await github.close()
+            await llm.close()
+            await memory.close()
+
+    asyncio.run(_patrol())
+
+
+@cli.command()
 @click.argument("url")
 @click.pass_context
 def analyze(ctx, url):
