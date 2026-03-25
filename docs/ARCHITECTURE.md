@@ -1,6 +1,6 @@
 # Architecture
 
-ContribAI v2.4.1 — DeerFlow-inspired agent architecture.
+ContribAI v2.5.0 — DeerFlow-inspired agent architecture.
 
 ## System Overview
 
