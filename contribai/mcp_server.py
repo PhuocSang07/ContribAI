@@ -17,6 +17,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from contribai.core.config import load_config
+from contribai.core.exceptions import GitHubAPIError
 from contribai.github.client import GitHubClient
 from contribai.orchestrator.memory import Memory
 
@@ -424,14 +425,51 @@ async def _close_pr(args: dict) -> list[types.TextContent]:
     except Exception as e:
         return _ok(success=False, reason=str(e))
 
+# AI policy keywords (inlined from pipeline._check_ai_policy)
+_AI_BAN_KEYWORDS = [
+    "no ai", "no-ai", "not accept ai", "prohibit ai", "ban ai",
+    "ai generated", "ai-generated", "no llm", "human only",
+]
+_AI_POLICY_PATHS = ["AI_POLICY.md", ".github/AI_POLICY.md", "ai_policy.md", ".github/ai_policy.md"]
+
+
 async def _check_duplicate_pr(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    mem = await get_memory()
+    repo = f"{args['owner']}/{args['repo']}"
+    prs = await mem.get_repo_prs(repo)
+    open_prs = [p for p in prs if p.get("status") == "open"]
+    if open_prs:
+        return _ok(is_duplicate=True, existing_pr_url=open_prs[0]["pr_url"])
+    return _ok(is_duplicate=False, existing_pr_url=None)
+
 
 async def _check_ai_policy(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    gh = await get_github()
+    for path in _AI_POLICY_PATHS:
+        try:
+            content = await gh.get_file_content(args["owner"], args["repo"], path)
+            lower = content.lower()
+            banned = any(kw in lower for kw in _AI_BAN_KEYWORDS)
+            return _ok(banned=banned, reason=path if banned else None)
+        except GitHubAPIError:
+            continue
+    return _ok(banned=False, reason=None)
+
 
 async def _get_stats(args: dict) -> list[types.TextContent]:
-    return _err("not implemented")
+    mem = await get_memory()
+    stats = await mem.get_stats()
+    try:
+        outcome = await mem.get_outcome_stats()
+        rate = outcome.get("avg_merge_rate", 0)
+    except Exception:
+        rate = 0
+    return _ok(
+        repos_analyzed=stats.get("total_repos_analyzed", 0),
+        prs_submitted=stats.get("total_prs_submitted", 0),
+        prs_merged=stats.get("prs_merged", 0),
+        merge_rate=f"{rate:.0%}",
+    )
 
 async def _patrol_prs(args: dict) -> list[types.TextContent]:
     return _err("not implemented")

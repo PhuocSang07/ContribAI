@@ -261,3 +261,75 @@ class TestClosePR:
             result = await _close_pr({"owner": "o", "repo": "r", "pr_number": 99})
         data = _text(result)
         assert data["success"] is False
+
+
+class TestCheckDuplicatePR:
+    @pytest.mark.asyncio
+    async def test_no_duplicate(self):
+        from contribai.mcp_server import _check_duplicate_pr
+        with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+            mem = AsyncMock()
+            mem.get_repo_prs = AsyncMock(return_value=[])
+            mock_get_mem.return_value = mem
+            result = await _check_duplicate_pr({"owner": "o", "repo": "r"})
+        data = _text(result)
+        assert data["is_duplicate"] is False
+
+    @pytest.mark.asyncio
+    async def test_finds_existing_open_pr(self):
+        from contribai.mcp_server import _check_duplicate_pr
+        with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+            mem = AsyncMock()
+            mem.get_repo_prs = AsyncMock(return_value=[
+                {"status": "open", "pr_url": "https://github.com/o/r/pull/5"}
+            ])
+            mock_get_mem.return_value = mem
+            result = await _check_duplicate_pr({"owner": "o", "repo": "r"})
+        data = _text(result)
+        assert data["is_duplicate"] is True
+        assert "pull/5" in data["existing_pr_url"]
+
+
+class TestCheckAIPolicy:
+    @pytest.mark.asyncio
+    async def test_not_banned_when_no_policy_file(self):
+        from contribai.core.exceptions import GitHubAPIError
+        from contribai.mcp_server import _check_ai_policy
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.get_file_content = AsyncMock(side_effect=GitHubAPIError("not found", 404))
+            mock_get_gh.return_value = gh
+            result = await _check_ai_policy({"owner": "o", "repo": "r"})
+        data = _text(result)
+        assert data["banned"] is False
+
+    @pytest.mark.asyncio
+    async def test_banned_when_policy_prohibits_ai(self):
+        from contribai.mcp_server import _check_ai_policy
+        policy_content = "We do not accept AI-generated contributions."
+        with patch("contribai.mcp_server.get_github") as mock_get_gh:
+            gh = AsyncMock()
+            gh.get_file_content = AsyncMock(return_value=policy_content)
+            mock_get_gh.return_value = gh
+            result = await _check_ai_policy({"owner": "o", "repo": "r"})
+        data = _text(result)
+        assert data["banned"] is True
+
+
+class TestGetStats:
+    @pytest.mark.asyncio
+    async def test_returns_stats(self):
+        from contribai.mcp_server import _get_stats
+        with patch("contribai.mcp_server.get_memory") as mock_get_mem:
+            mem = AsyncMock()
+            mem.get_stats = AsyncMock(return_value={
+                "total_repos_analyzed": 10,
+                "total_prs_submitted": 5,
+                "prs_merged": 3,
+            })
+            mem.get_outcome_stats = AsyncMock(return_value={"avg_merge_rate": 0.6})
+            mock_get_mem.return_value = mem
+            result = await _get_stats({})
+        data = _text(result)
+        assert data["prs_submitted"] == 5
+        assert data["merge_rate"] == "60%"
