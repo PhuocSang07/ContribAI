@@ -83,6 +83,17 @@ CREATE TABLE IF NOT EXISTS repo_preferences (
     notes       TEXT DEFAULT '',
     updated_at  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS working_memory (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo        TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    language    TEXT DEFAULT '',
+    created_at  TEXT,
+    expires_at  TEXT,
+    UNIQUE(repo, key)
+);
 """
 
 
@@ -373,3 +384,88 @@ class Memory:
         row = await cursor.fetchone()
         stats["avg_merge_rate"] = round(row[0], 3) if row and row[0] else 0.0
         return stats
+
+    # ── Working Memory (hot context) ──────────────────────────────────────
+
+    async def store_context(
+        self,
+        repo: str,
+        key: str,
+        value: str,
+        *,
+        language: str = "",
+        ttl_hours: float = 24.0,
+    ) -> None:
+        """Store hot context for a repo.
+
+        Args:
+            repo: Repository full name (owner/repo).
+            key: Context key (e.g. 'analysis_summary', 'style_guide').
+            value: Context value.
+            language: Programming language (for similarity lookups).
+            ttl_hours: Hours until this context expires.
+        """
+        now = datetime.now(UTC)
+        from datetime import timedelta
+
+        expires_dt = now + timedelta(hours=ttl_hours)
+        await self._db.execute(
+            """INSERT OR REPLACE INTO working_memory
+               (repo, key, value, language, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (repo, key, value, language, now.isoformat(), expires_dt.isoformat()),
+        )
+        await self._db.commit()
+
+    async def get_context(self, repo: str, key: str) -> str | None:
+        """Retrieve hot context for a repo, returns None if expired.
+
+        Args:
+            repo: Repository full name.
+            key: Context key.
+
+        Returns:
+            Context value or None if not found/expired.
+        """
+        now = datetime.now(UTC).isoformat()
+        cursor = await self._db.execute(
+            """SELECT value FROM working_memory
+               WHERE repo = ? AND key = ? AND expires_at > ?""",
+            (repo, key, now),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def get_similar_context(self, language: str, key: str, limit: int = 5) -> list[dict]:
+        """Find context from repos with the same language.
+
+        Useful for transferring learned patterns to similar repos.
+
+        Args:
+            language: Programming language to match.
+            key: Context key to look for.
+            limit: Max results.
+
+        Returns:
+            List of {repo, value} dicts.
+        """
+        now = datetime.now(UTC).isoformat()
+        cursor = await self._db.execute(
+            """SELECT repo, value FROM working_memory
+               WHERE language = ? AND key = ? AND expires_at > ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (language, key, now, limit),
+        )
+        rows = await cursor.fetchall()
+        return [{"repo": r[0], "value": r[1]} for r in rows]
+
+    async def archive_expired(self) -> int:
+        """Delete expired working memory entries.
+
+        Returns:
+            Number of entries deleted.
+        """
+        now = datetime.now(UTC).isoformat()
+        cursor = await self._db.execute("DELETE FROM working_memory WHERE expires_at <= ?", (now,))
+        await self._db.commit()
+        return cursor.rowcount

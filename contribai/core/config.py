@@ -97,6 +97,7 @@ class AnalysisConfig(BaseModel):
     skip_patterns: list[str] = Field(
         default_factory=lambda: ["*.min.js", "*.min.css", "vendor/*", "node_modules/*", "*.lock"]
     )
+    max_context_tokens: int = 30_000  # token budget for context compression
 
 
 class ContributionConfig(BaseModel):
@@ -198,6 +199,14 @@ class MultiModelConfig(BaseModel):
     model_overrides: dict[str, str] = Field(default_factory=dict)
 
 
+class SandboxConfig(BaseModel):
+    """Sandbox execution configuration."""
+
+    enabled: bool = False
+    timeout: int = 30
+    docker_image: str = ""  # override default language image
+
+
 class ContribAIConfig(BaseModel):
     """Root configuration for ContribAIConfig."""
 
@@ -213,6 +222,7 @@ class ContribAIConfig(BaseModel):
     quota: QuotaConfig = Field(default_factory=QuotaConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     multi_model: MultiModelConfig = Field(default_factory=MultiModelConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
 
 
 def load_config(path: str | Path | None = None) -> ContribAIConfig:

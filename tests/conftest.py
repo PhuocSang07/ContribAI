@@ -130,3 +130,15 @@ def mock_github():
     client.list_pull_requests = AsyncMock(return_value=[])
     client.close = AsyncMock()
     return client
+
+
+@pytest.fixture
+async def memory(tmp_path):
+    """In-memory SQLite Memory instance for tests."""
+    from contribai.orchestrator.memory import Memory
+
+    mem = Memory(tmp_path / "test_memory.db")
+    await mem.init()
+    yield mem
+    await mem.close()
+
