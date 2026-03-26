@@ -7,7 +7,7 @@ to avoid duplicate work and improve over time.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -120,7 +120,7 @@ class Memory:
             """INSERT OR REPLACE INTO analyzed_repos
                (full_name, language, stars, analyzed_at, findings)
                VALUES (?, ?, ?, ?, ?)""",
-            (full_name, language, stars, datetime.utcnow().isoformat(), findings_count),
+            (full_name, language, stars, datetime.now(UTC).isoformat(), findings_count),
         )
         await self._db.commit()
 
@@ -146,7 +146,7 @@ class Memory:
         fork: str = "",
     ):
         """Record a submitted PR."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         await self._db.execute(
             """INSERT OR REPLACE INTO submitted_prs
                (repo, pr_number, pr_url, title, type, branch, fork, created_at, updated_at)
@@ -159,7 +159,7 @@ class Memory:
         """Update PR status."""
         await self._db.execute(
             "UPDATE submitted_prs SET status = ?, updated_at = ? WHERE repo = ? AND pr_number = ?",
-            (status, datetime.utcnow().isoformat(), repo, pr_number),
+            (status, datetime.now(UTC).isoformat(), repo, pr_number),
         )
         await self._db.commit()
 
@@ -180,7 +180,7 @@ class Memory:
 
     async def get_today_pr_count(self) -> int:
         """Get number of PRs created today."""
-        today = datetime.utcnow().date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         cursor = await self._db.execute(
             "SELECT COUNT(*) FROM submitted_prs WHERE created_at LIKE ?",
             (f"{today}%",),
@@ -204,7 +204,7 @@ class Memory:
         """Record the start of a pipeline run. Returns run ID."""
         cursor = await self._db.execute(
             "INSERT INTO run_log (started_at) VALUES (?)",
-            (datetime.utcnow().isoformat(),),
+            (datetime.now(UTC).isoformat(),),
         )
         await self._db.commit()
         return cursor.lastrowid
@@ -223,7 +223,7 @@ class Memory:
                SET finished_at = ?, repos_analyzed = ?, prs_created = ?,
                    findings = ?, errors = ?
                WHERE id = ?""",
-            (datetime.utcnow().isoformat(), repos_analyzed, prs_created, findings, errors, run_id),
+            (datetime.now(UTC).isoformat(), repos_analyzed, prs_created, findings, errors, run_id),
         )
         await self._db.commit()
 
@@ -283,7 +283,7 @@ class Memory:
                 outcome,
                 feedback,
                 time_to_close_hours,
-                datetime.utcnow().isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         await self._db.commit()
@@ -330,7 +330,7 @@ class Memory:
                 json.dumps(list(set(rejected_types))),
                 round(merge_rate, 3),
                 round(avg_hours, 1),
-                datetime.utcnow().isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         await self._db.commit()
