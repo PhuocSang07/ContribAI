@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -168,7 +168,7 @@ class Contribution(BaseModel):
     commit_message: str = ""
     tests_added: list[FileChange] = Field(default_factory=list)
     branch_name: str = ""
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def total_files_changed(self) -> int:
@@ -183,7 +183,7 @@ class PRResult(BaseModel):
     pr_number: int
     pr_url: str
     status: PRStatus = PRStatus.OPEN
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     branch_name: str = ""
     fork_full_name: str = ""
 

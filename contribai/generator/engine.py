@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from contribai.core.config import ContributionConfig
 from contribai.core.models import (
@@ -79,7 +79,7 @@ class ContributionGenerator:
                 changes=changes,
                 commit_message=commit_msg,
                 branch_name=branch_name,
-                generated_at=datetime.utcnow(),
+                generated_at=datetime.now(UTC),
             )
 
             # 6: Self-review
@@ -108,7 +108,7 @@ class ContributionGenerator:
         if not self._memory:
             return None
         try:
-            return await self._memory.get_repo_preferences(context.full_name)
+            return await self._memory.get_repo_preferences(context.repo.full_name)
         except Exception as e:
             logger.debug("Could not fetch repo preferences: %s", e)
             return None
