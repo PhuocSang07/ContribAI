@@ -67,6 +67,32 @@ SKIP_EXTENSIONS = {
     ".json",
 }
 
+# Directories to skip — changes in these are low-value and often rejected
+# by maintainers. Example code, docs, tests, and fixtures are not worth PRing.
+SKIP_DIRECTORIES = {
+    "examples",
+    "example",
+    "samples",
+    "sample",
+    "demos",
+    "demo",
+    "docs",
+    "doc",
+    "test",
+    "tests",
+    "testing",
+    "test_data",
+    "testdata",
+    "fixtures",
+    "benchmarks",
+    "benchmark",
+    "__pycache__",
+    "vendor",
+    "third_party",
+    "third-party",
+    "node_modules",
+}
+
 
 def _titles_similar(title_a: str, title_b: str) -> bool:
     """Check if two finding/PR titles are similar enough to be duplicates.
@@ -678,6 +704,12 @@ class ContribPipeline:
                 logger.debug("⏭️ Pre-filter: skip non-code file %s", fp)
                 continue
 
+            # Skip findings in low-value directories (examples, docs, tests, etc.)
+            path_parts = fp.lower().replace("\\", "/").split("/")
+            if any(part in SKIP_DIRECTORIES for part in path_parts):
+                logger.debug("⏭️ Pre-filter: skip low-value directory %s", fp)
+                continue
+
             # Skip findings on protected meta files
             basename = fp.rsplit("/", 1)[-1] if "/" in fp else fp
             if basename.upper() in PROTECTED_META_FILES:
@@ -1011,6 +1043,10 @@ class ContribPipeline:
 
                 _, ext = os.path.splitext(path.lower())
                 if ext in SKIP_EXTENSIONS:
+                    return False
+                # Skip low-value directories
+                path_parts = path.lower().replace("\\", "/").split("/")
+                if any(part in SKIP_DIRECTORIES for part in path_parts):
                     return False
                 return path.lower() not in {p.lower() for p in PROTECTED_META_FILES}
 
@@ -1367,6 +1403,53 @@ class ContribPipeline:
             logger.debug("PR permission check failed for %s: %s", repo.full_name, e)
             return False  # Don't block on permission check failures
 
+    async def _close_linked_issues(
+        self,
+        repo: Repository,
+        pr_number: int,
+        *,
+        reason: str = "PR was closed",
+    ) -> None:
+        """Close issues that were auto-created alongside a PR.
+
+        Fetches the PR body, extracts linked issue numbers (Closes/Fixes #N),
+        and closes each one to avoid orphaned issues spamming the repo.
+        """
+        import re
+
+        try:
+            pr_data = await self._github._get(f"/repos/{repo.owner}/{repo.name}/pulls/{pr_number}")
+            body = pr_data.get("body", "") or ""
+
+            # Match GitHub linking keywords: Closes #123, Fixes #123, Resolves #123
+            issue_numbers = re.findall(
+                r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)",
+                body,
+                re.IGNORECASE,
+            )
+
+            for issue_num in set(issue_numbers):
+                try:
+                    await self._github.close_issue(
+                        repo.owner,
+                        repo.name,
+                        int(issue_num),
+                        comment=(
+                            f"Auto-closing: linked PR #{pr_number} was closed "
+                            f"({reason}). Sorry for the inconvenience."
+                        ),
+                    )
+                    logger.info(
+                        "🗑️ Auto-closed issue #%s on %s (linked to PR #%d)",
+                        issue_num,
+                        repo.full_name,
+                        pr_number,
+                    )
+                except Exception:
+                    logger.debug("Could not close issue #%s on %s", issue_num, repo.full_name)
+        except Exception:
+            logger.debug("Could not fetch PR #%d body for issue cleanup", pr_number)
+
     async def _check_ci_and_close_if_failed(
         self,
         pr_result: PRResult,
@@ -1444,6 +1527,10 @@ class ContribPipeline:
                     repo.name,
                     pr_result.pr_number,
                     comment=comment,
+                )
+                # Auto-close linked issues to avoid orphaned spam
+                await self._close_linked_issues(
+                    repo, pr_result.pr_number, reason="CI checks failed"
                 )
                 # Record closed status in memory
                 await self._memory.update_pr_status(

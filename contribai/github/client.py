@@ -406,6 +406,30 @@ class GitHubClient:
         logger.info("Created issue #%d on %s/%s: %s", data["number"], owner, repo, title)
         return data
 
+    async def close_issue(
+        self,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        *,
+        comment: str | None = None,
+    ) -> None:
+        """Close an issue with an optional comment.
+
+        Used to auto-close linked issues when their PR is closed/rejected.
+        """
+        if comment:
+            await self._post(
+                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                json={"body": comment},
+            )
+        await self._request(
+            "PATCH",
+            f"/repos/{owner}/{repo}/issues/{issue_number}",
+            json={"state": "closed", "state_reason": "not_planned"},
+        )
+        logger.info("Closed issue #%d on %s/%s", issue_number, owner, repo)
+
     async def get_pr_comments(self, owner: str, repo: str, pr_number: int) -> list[dict]:
         """Get comments on a pull request (issue comments)."""
         return await self._get(f"/repos/{owner}/{repo}/issues/{pr_number}/comments")

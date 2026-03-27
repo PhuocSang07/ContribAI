@@ -106,6 +106,15 @@ class PRPatrol:
                     f"/repos/{owner}/{repo_name}/pulls/{pr['pr_number']}"
                 )
                 if pr_data.get("state") != "open":
+                    # If PR was closed without merging, auto-close linked issues
+                    if (
+                        pr_data.get("state") == "closed"
+                        and not pr_data.get("merged")
+                        and not dry_run
+                    ):
+                        await self._close_linked_issues_from_body(
+                            owner, repo_name, pr["pr_number"], pr_data
+                        )
                     result.prs_skipped += 1
                     continue
 
@@ -733,3 +742,46 @@ class PRPatrol:
                     logger.warning("  CLA re-sign failed: %s", e)
 
         return False
+
+    async def _close_linked_issues_from_body(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        pr_data: dict,
+    ) -> None:
+        """Close issues linked from the PR body when PR is closed without merge.
+
+        When our PR is rejected/closed, the auto-created issue stays open —
+        this is spam to the repo. Extract linked issue numbers from the PR
+        body (Closes/Fixes/Resolves #N) and close them.
+        """
+        import re
+
+        body = pr_data.get("body", "") or ""
+        issue_numbers = re.findall(
+            r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)",
+            body,
+            re.IGNORECASE,
+        )
+
+        for issue_num in set(issue_numbers):
+            try:
+                await self._github.close_issue(
+                    owner,
+                    repo,
+                    int(issue_num),
+                    comment=(
+                        f"Auto-closing: linked PR #{pr_number} was closed. "
+                        "Sorry for the inconvenience."
+                    ),
+                )
+                logger.info(
+                    "🗑️ Auto-closed issue #%s on %s/%s (PR #%d closed)",
+                    issue_num,
+                    owner,
+                    repo,
+                    pr_number,
+                )
+            except Exception:
+                logger.debug("Could not close issue #%s on %s/%s", issue_num, owner, repo)
