@@ -55,4 +55,4 @@ jobs:
       - name: Install deps
         run: pip install -e ".[dev]" pip-audit
       - name: Audit dependencies
-        run: pip-audit || true
+        run: pip-audit
