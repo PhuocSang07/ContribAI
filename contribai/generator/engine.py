@@ -421,9 +421,8 @@ class ContributionGenerator:
             # Count brackets
             if ch in pairs:
                 stack.append(pairs[ch])
-            elif ch in closers:
-                if stack and stack[-1] == ch:
-                    stack.pop()
+            elif ch in closers and stack and stack[-1] == ch:
+                stack.pop()
 
             prev_ch = ch
 

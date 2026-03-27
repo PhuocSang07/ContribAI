@@ -1327,7 +1327,7 @@ class ContribPipeline:
 
             # Check if we're a collaborator via the permission endpoint
             try:
-                resp = await self._github._get(
+                await self._github._get(
                     f"/repos/{repo.owner}/{repo.name}/collaborators/{username}/permission"
                 )
                 # If we get a valid response, we're a collaborator — no restriction.
@@ -1342,12 +1342,9 @@ class ContribPipeline:
                     # to detect it from the repo's settings.
                     # Fall through to the fork check below.
                     pass
-                elif "404" in err_str:
-                    # Repo not found or private — skip
-                    return True
                 else:
-                    # Unknown error — don't block, let it fail later
-                    return False
+                    # 404 = repo not found/private → skip; other errors → don't block
+                    return "404" in err_str
 
             # Try to fork as a lightweight permission test.
             # If forking is disabled, PRs from non-collaborators are blocked.
