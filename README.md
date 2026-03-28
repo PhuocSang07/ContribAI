@@ -5,9 +5,32 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-416%20passed-brightgreen)](#testing)
-[![Version](https://img.shields.io/badge/version-3.0.4-blue)](https://github.com/tang-vu/ContribAI/releases)
+[![Version](https://img.shields.io/badge/version-3.0.6-blue)](https://github.com/tang-vu/ContribAI/releases)
+
+### 🏆 Results
+
+| Metric | Count |
+|--------|-------|
+| **PRs Submitted** | 79 |
+| **PRs Merged** | 54 |
+| **Repos Contributed** | 25 |
+| **Notable Repos** | Flask, Pandas, Maigret, Marimo, s-tui |
+
+> Set it up once, wake up to merged PRs. See the [**Hall of Fame →**](HALL_OF_FAME.md)
 
 ContribAI discovers open source repositories, analyzes code for improvements, generates fixes, and submits Pull Requests — all autonomously.
+
+```
+  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+  │ Discovery│───▶│ Analysis │───▶│Generator │───▶│ PR + CI  │───▶│ Patrol   │
+  │          │    │ 20 skills│    │ LLM +    │    │ Fork,    │    │ Auto-fix │
+  │ Find repos│    │ Security │    │ self-    │    │ commit,  │    │ review   │
+  │ by lang, │    │ quality, │    │ review,  │    │ create   │    │ feedback │
+  │ stars    │    │ perf     │    │ scoring  │    │ PR + CLA │    │ & reply  │
+  └──────────┘    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+```
+
+**Safety:** Quality gate (7-check scorer), duplicate detection, AI policy respect, CI monitoring, rate limiting, dry-run mode
 
 ## Quick Start
 
@@ -26,21 +49,6 @@ contribai hunt              # Autonomous: discover repos → analyze → PR
 contribai target <repo_url> # Target a specific repo
 contribai run --dry-run     # Preview without creating PRs
 ```
-
-## How It Works
-
-```
- Discovery → Analysis → Generation → PR Creation
-     │            │            │            │
-  Find repos   Detect      Generate     Fork, branch,
-  by language, security,   fixes via    commit, and
-  stars, and   quality,    LLM with     create PR with
-  activity     perf issues self-review  DCO signoff
-```
-
-**Pipeline:** Discover contribution-friendly repos → Analyze code with 20+ skills → Generate fixes with LLM self-review → Submit PRs with quality scoring
-
-**Safety:** Quality gate (7-check scorer), duplicate detection, AI policy respect, CI monitoring, rate limiting, dry-run mode
 
 ## Features
 
@@ -182,6 +190,7 @@ my_analyzer = "my_package:MyAnalyzer"
 
 | Doc | Description |
 |-----|-------------|
+| [`HALL_OF_FAME.md`](HALL_OF_FAME.md) | **54 merged PRs** across 25 repos — real results |
 | [`system-architecture.md`](docs/system-architecture.md) | Pipeline, middleware, events, LLM routing |
 | [`code-standards.md`](docs/code-standards.md) | Conventions, patterns, testing |
 | [`deployment-guide.md`](docs/deployment-guide.md) | Install, Docker, config, CLI reference |
