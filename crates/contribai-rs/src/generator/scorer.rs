@@ -5,9 +5,14 @@
 //! to prevent low-quality PRs.
 
 use regex::Regex;
+use std::sync::LazyLock;
 use tracing::info;
 
 use crate::core::models::Contribution;
+
+static RE_CONVENTIONAL_COMMIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(feat|fix|docs|refactor|perf|test|chore)\(?.*\)?: .+").unwrap()
+});
 
 /// Quality assessment of a contribution.
 #[derive(Debug, Clone)]
@@ -146,8 +151,7 @@ impl QualityScorer {
             };
         }
 
-        let re = Regex::new(r"^(feat|fix|docs|refactor|perf|test|chore)\(?.*\)?: .+").unwrap();
-        if re.is_match(msg) {
+        if RE_CONVENTIONAL_COMMIT.is_match(msg) {
             CheckResult {
                 name: "commit_message".into(),
                 passed: true,

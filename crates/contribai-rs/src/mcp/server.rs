@@ -22,7 +22,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{error, info};
 
 use crate::github::client::GitHubClient;
@@ -285,17 +286,16 @@ pub async fn run_stdio_server(
     github: &GitHubClient,
     memory: &Memory,
 ) -> anyhow::Result<()> {
-    let stdin = io::stdin();
+    let reader = BufReader::new(tokio::io::stdin());
+    let mut lines = reader.lines();
     let stdout = io::stdout();
 
     info!("MCP server started on stdio");
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) if l.is_empty() => continue,
-            Ok(l) => l,
-            Err(_) => break,
-        };
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.is_empty() {
+            continue;
+        }
 
         let request: JsonRpcRequest = match serde_json::from_str(&line) {
             Ok(r) => r,
@@ -387,6 +387,14 @@ async fn handle_tool_call(
     github: &GitHubClient,
     memory: &Memory,
 ) -> anyhow::Result<Value> {
+    // Helper: extract a required non-empty string argument.
+    let require_str = |key: &str| -> anyhow::Result<&str> {
+        args[key]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("'{}' is required and must be non-empty", key))
+    };
+
     match name {
         "search_repos" => {
             let language = args["language"].as_str().unwrap_or("python");
@@ -404,22 +412,22 @@ async fn handle_tool_call(
         }
 
         "get_repo_info" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let info = github.get_repo_details(owner, repo).await?;
             Ok(json!(info))
         }
 
         "get_file_tree" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let tree = github.get_file_tree(owner, repo, None).await?;
             Ok(json!(tree))
         }
 
         "get_file_content" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let path = args["path"].as_str().unwrap_or("");
             let git_ref = args["ref"].as_str();
             let content = github.get_file_content(owner, repo, path, git_ref).await?;
@@ -427,22 +435,22 @@ async fn handle_tool_call(
         }
 
         "get_open_issues" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let issues = github.get_open_issues(owner, repo, 20).await?;
             Ok(json!(issues))
         }
 
         "fork_repo" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let fork = github.fork_repository(owner, repo).await?;
             Ok(json!(fork))
         }
 
         "create_branch" => {
             let fork_owner = args["fork_owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let repo = require_str("repo")?;
             let branch_name = args["branch_name"].as_str().unwrap_or("");
             let from_branch = args["from_branch"].as_str();
             github
@@ -453,7 +461,7 @@ async fn handle_tool_call(
 
         "push_file_change" => {
             let fork_owner = args["fork_owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let repo = require_str("repo")?;
             let branch = args["branch"].as_str().unwrap_or("");
             let path = args["path"].as_str().unwrap_or("");
             let content = args["content"].as_str().unwrap_or("");
@@ -469,8 +477,8 @@ async fn handle_tool_call(
         }
 
         "create_pr" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let title = args["title"].as_str().unwrap_or("");
             let body = args["body"].as_str().unwrap_or("");
             let head = args["head_branch"].as_str().unwrap_or("");
@@ -488,8 +496,8 @@ async fn handle_tool_call(
         }
 
         "close_pr" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let pr_number = args["pr_number"].as_i64().unwrap_or(0);
             info!(owner, repo, pr_number, "Closing PR");
             match github.close_pull_request(owner, repo, pr_number, None).await {
@@ -499,8 +507,8 @@ async fn handle_tool_call(
         }
 
         "check_duplicate_pr" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let full_repo = format!("{}/{}", owner, repo);
             info!(repo = %full_repo, "Checking for duplicate PR");
             // Query memory for any open PRs submitted to this repo
@@ -523,8 +531,8 @@ async fn handle_tool_call(
         }
 
         "check_ai_policy" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             info!(owner, repo, "Checking AI contribution policy");
             // Keywords that indicate AI contributions are banned
             let ai_ban_keywords = [
@@ -569,8 +577,8 @@ async fn handle_tool_call(
         }
 
         "patrol_prs" => {
-            let owner = args["owner"].as_str().unwrap_or("");
-            let repo = args["repo"].as_str().unwrap_or("");
+            let owner = require_str("owner")?;
+            let repo = require_str("repo")?;
             let full_repo = format!("{}/{}", owner, repo);
             let single_pr = args["pr_number"].as_i64();
             info!(repo = %full_repo, "Patrolling PRs for review comments");

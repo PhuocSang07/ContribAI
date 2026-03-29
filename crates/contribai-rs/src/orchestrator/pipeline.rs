@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use crate::analysis::analyzer::CodeAnalyzer;
 use crate::core::config::ContribAIConfig;
-use crate::core::error::{ContribError, Result};
+use crate::core::error::Result;
 use crate::core::events::{Event, EventBus, EventType};
 use crate::core::models::{AnalysisResult, DiscoveryCriteria, Repository};
 use crate::generator::engine::ContributionGenerator;
@@ -106,7 +106,7 @@ impl<'a> ContribPipeline<'a> {
 
         // Check daily PR limit
         let today_prs = self.memory.get_today_pr_count()?;
-        let remaining_prs = self.config.github.max_prs_per_day as usize - today_prs;
+        let remaining_prs = (self.config.github.max_prs_per_day as usize).saturating_sub(today_prs);
         if remaining_prs == 0 && !dry_run {
             warn!(
                 limit = self.config.github.max_prs_per_day,

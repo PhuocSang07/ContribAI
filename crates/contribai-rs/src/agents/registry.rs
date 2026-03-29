@@ -202,7 +202,7 @@ impl SubAgent for PatrolAgent {
     fn description(&self) -> &str {
         "Monitor open PRs for review feedback and auto-respond with fixes"
     }
-    async fn execute(&self, ctx: &AgentContext) -> HashMap<String, Value> {
+    async fn execute(&self, _ctx: &AgentContext) -> HashMap<String, Value> {
         let mut result = HashMap::new();
         result.insert("role".into(), Value::String(self.role().to_string()));
         result

@@ -8,7 +8,6 @@ use regex::Regex;
 use std::collections::HashMap;
 use tracing::{info, warn};
 
-use crate::core::error::Result;
 use crate::core::models::{ContributionType, FileNode, Finding, Issue, RepoContext, Repository, Severity};
 use crate::github::client::GitHubClient;
 use crate::llm::provider::LlmProvider;
@@ -677,6 +676,7 @@ impl<'a> IssueSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::error::Result;
 
     fn make_issue(title: &str, labels: &[&str]) -> Issue {
         Issue {

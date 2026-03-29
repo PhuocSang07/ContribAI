@@ -104,6 +104,13 @@ pub struct Memory {
 }
 
 impl Memory {
+    /// Safely lock the DB mutex, recovering from poisoned state.
+    fn lock_db(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+        self.db.lock().map_err(|e| {
+            ContribError::Config(format!("DB lock poisoned: {}", e))
+        })
+    }
+
     /// Open (or create) a SQLite database.
     pub fn open(db_path: &Path) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
@@ -149,7 +156,7 @@ impl Memory {
 
     /// Check if a repo has been analyzed before.
     pub fn has_analyzed(&self, full_name: &str) -> Result<bool> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let exists: bool = db
             .query_row(
                 "SELECT 1 FROM analyzed_repos WHERE full_name = ?1",
@@ -170,7 +177,7 @@ impl Memory {
         stars: i64,
         findings_count: i64,
     ) -> Result<()> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "INSERT OR REPLACE INTO analyzed_repos
              (full_name, language, stars, analyzed_at, findings)
@@ -195,7 +202,7 @@ impl Memory {
         fork: &str,
     ) -> Result<()> {
         let now = Utc::now().to_rfc3339();
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "INSERT OR REPLACE INTO submitted_prs
              (repo, pr_number, pr_url, title, type, branch, fork, created_at, updated_at)
@@ -208,7 +215,7 @@ impl Memory {
 
     /// Update PR status.
     pub fn update_pr_status(&self, repo: &str, pr_number: i64, status: &str) -> Result<()> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "UPDATE submitted_prs SET status = ?1, updated_at = ?2
              WHERE repo = ?3 AND pr_number = ?4",
@@ -220,7 +227,7 @@ impl Memory {
 
     /// Get PRs, optionally filtered by status.
     pub fn get_prs(&self, status: Option<&str>, limit: usize) -> Result<Vec<HashMap<String, String>>> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let mut rows = Vec::new();
 
         if let Some(s) = status {
@@ -270,7 +277,7 @@ impl Memory {
     /// Get number of PRs created today.
     pub fn get_today_pr_count(&self) -> Result<usize> {
         let today = Utc::now().format("%Y-%m-%d").to_string();
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let count: i64 = db
             .query_row(
                 "SELECT COUNT(*) FROM submitted_prs WHERE created_at LIKE ?1",
@@ -285,7 +292,7 @@ impl Memory {
 
     /// Record the start of a pipeline run.
     pub fn start_run(&self) -> Result<i64> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "INSERT INTO run_log (started_at) VALUES (?1)",
             params![Utc::now().to_rfc3339()],
@@ -303,7 +310,7 @@ impl Memory {
         findings: i64,
         errors: i64,
     ) -> Result<()> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "UPDATE run_log SET finished_at = ?1, repos_analyzed = ?2,
              prs_created = ?3, findings = ?4, errors = ?5 WHERE id = ?6",
@@ -315,7 +322,7 @@ impl Memory {
 
     /// Get overall statistics.
     pub fn get_stats(&self) -> Result<HashMap<String, i64>> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let mut stats = HashMap::new();
 
         let count: i64 = db
@@ -359,7 +366,7 @@ impl Memory {
         time_to_close_hours: f64,
     ) -> Result<()> {
         {
-            let db = self.db.lock().unwrap();
+            let db = self.lock_db()?;
             db.execute(
                 "INSERT OR REPLACE INTO pr_outcomes
                  (repo, pr_number, pr_url, pr_type, outcome, feedback,
@@ -380,7 +387,7 @@ impl Memory {
 
     /// Recompute repo preferences from outcome history.
     fn update_repo_preferences(&self, repo: &str) -> Result<()> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
 
         let mut stmt = db
             .prepare(
@@ -455,7 +462,7 @@ impl Memory {
 
     /// Get learned preferences for a specific repo.
     pub fn get_repo_preferences(&self, repo: &str) -> Result<Option<RepoPreferences>> {
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.query_row(
             "SELECT preferred_types, rejected_types, merge_rate, avg_review_hours, notes
              FROM repo_preferences WHERE repo = ?1",
@@ -489,7 +496,7 @@ impl Memory {
     ) -> Result<()> {
         let now = Utc::now();
         let expires = now + Duration::seconds((ttl_hours * 3600.0) as i64);
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.execute(
             "INSERT OR REPLACE INTO working_memory
              (repo, key, value, language, created_at, expires_at)
@@ -503,7 +510,7 @@ impl Memory {
     /// Retrieve hot context, returns None if expired.
     pub fn get_context(&self, repo: &str, key: &str) -> Result<Option<String>> {
         let now = Utc::now().to_rfc3339();
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         db.query_row(
             "SELECT value FROM working_memory
              WHERE repo = ?1 AND key = ?2 AND expires_at > ?3",
@@ -522,7 +529,7 @@ impl Memory {
         limit: usize,
     ) -> Result<Vec<(String, String)>> {
         let now = Utc::now().to_rfc3339();
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let mut stmt = db
             .prepare(
                 "SELECT repo, value FROM working_memory
@@ -543,7 +550,7 @@ impl Memory {
     /// Delete expired working memory entries.
     pub fn archive_expired(&self) -> Result<usize> {
         let now = Utc::now().to_rfc3339();
-        let db = self.db.lock().unwrap();
+        let db = self.lock_db()?;
         let deleted = db
             .execute("DELETE FROM working_memory WHERE expires_at <= ?1", params![now])
             .map_err(|e| ContribError::Config(format!("DB error: {}", e)))?;

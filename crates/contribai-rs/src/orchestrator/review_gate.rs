@@ -105,7 +105,10 @@ fn display_contribution(contribution: &Contribution, finding: &Finding, repo_nam
 
     // Truncate long descriptions to keep output readable.
     let desc = if contribution.description.len() > 500 {
-        format!("{}… (truncated)", &contribution.description[..500])
+        format!(
+            "{}… (truncated)",
+            crate::core::safe_truncate(&contribution.description, 500)
+        )
     } else {
         contribution.description.clone()
     };
@@ -121,7 +124,7 @@ fn display_contribution(contribution: &Contribution, finding: &Finding, repo_nam
         let preview = if change.new_content.len() > 400 {
             format!(
                 "{}… ({} chars truncated)",
-                &change.new_content[..400],
+                crate::core::safe_truncate(&change.new_content, 400),
                 change.new_content.len() - 400
             )
         } else {

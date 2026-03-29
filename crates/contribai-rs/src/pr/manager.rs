@@ -4,9 +4,15 @@
 //! Handles: fork → branch → commit → PR → compliance → CLA.
 
 use regex::Regex;
+use std::sync::LazyLock;
 use tracing::{info, warn};
 
 use crate::core::error::Result;
+
+static RE_SLUG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^a-z0-9]+").unwrap());
+static RE_CONVENTIONAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-z]+(\([^)]+\))?!?: .+").unwrap());
 use crate::core::models::{
     Contribution, ContributionType, PrResult, PrStatus, Repository,
 };
@@ -182,11 +188,10 @@ impl<'a> PrManager<'a> {
             ContributionType::Refactor => "refactor",
         };
 
-        let re = Regex::new(r"[^a-z0-9]+").unwrap();
         let lower = contribution.finding.title.to_lowercase();
-        let slug = re.replace_all(&lower, "-");
+        let slug = RE_SLUG.replace_all(&lower, "-");
         let slug = slug.trim_matches('-');
-        let slug = if slug.len() > 50 { &slug[..50] } else { slug };
+        let slug = crate::core::safe_truncate(slug, 50);
 
         format!("{}/{}", prefix, slug)
     }
@@ -661,8 +666,7 @@ pub fn is_cla_bot(login_lower: &str, body_lower: &str) -> bool {
 /// (e.g. `fix: ...`, `feat(scope): ...`).
 pub fn is_conventional_commit_title(title: &str) -> bool {
     // Pattern: type[(scope)]: description
-    let re = Regex::new(r"^[a-z]+(\([^)]+\))?!?: .+").unwrap();
-    re.is_match(title)
+    RE_CONVENTIONAL.is_match(title)
 }
 
 /// Inject `Closes #N` into a PR body, replacing placeholders or prepending.

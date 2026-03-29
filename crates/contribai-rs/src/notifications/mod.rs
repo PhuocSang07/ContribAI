@@ -6,7 +6,7 @@
 use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::core::error::{ContribError, Result};
 

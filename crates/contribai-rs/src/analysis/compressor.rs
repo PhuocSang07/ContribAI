@@ -255,11 +255,7 @@ impl ContextCompressor {
     ) -> Result<String> {
         // Cap input to avoid runaway token spend (4× budget as chars)
         let input_cap = max_summary_tokens * CHARS_PER_TOKEN * 4;
-        let capped_context = if context.len() > input_cap {
-            &context[..input_cap]
-        } else {
-            context
-        };
+        let capped_context = crate::core::safe_truncate(context, input_cap);
 
         let prompt = format!("{}{}", COMPRESSION_PROMPT, capped_context);
 

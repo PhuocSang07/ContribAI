@@ -4,7 +4,7 @@
 //! Reads CONTRIBUTING.md, PR templates, and adapts PR format.
 
 use regex::Regex;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::github::client::GitHubClient;
 

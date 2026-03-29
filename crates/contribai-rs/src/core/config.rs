@@ -88,7 +88,7 @@ impl Default for ContribAIConfig {
 }
 
 /// GitHub API configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct GitHubConfig {
     /// GitHub personal access token (from env `GITHUB_TOKEN`).
     #[serde(default)]
@@ -97,6 +97,16 @@ pub struct GitHubConfig {
     pub rate_limit_buffer: u32,
     #[serde(default = "default_max_prs_per_day")]
     pub max_prs_per_day: u32,
+}
+
+impl std::fmt::Debug for GitHubConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitHubConfig")
+            .field("token", &"[REDACTED]")
+            .field("rate_limit_buffer", &self.rate_limit_buffer)
+            .field("max_prs_per_day", &self.max_prs_per_day)
+            .finish()
+    }
 }
 
 fn default_rate_limit_buffer() -> u32 {
@@ -117,7 +127,7 @@ impl Default for GitHubConfig {
 }
 
 /// LLM provider configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
     #[serde(default = "default_provider")]
     pub provider: String,
@@ -131,6 +141,19 @@ pub struct LlmConfig {
     pub max_tokens: u32,
     /// For OpenAI-compatible endpoints.
     pub base_url: Option<String>,
+}
+
+impl std::fmt::Debug for LlmConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LlmConfig")
+            .field("provider", &self.provider)
+            .field("api_key", &"[REDACTED]")
+            .field("model", &self.model)
+            .field("temperature", &self.temperature)
+            .field("max_tokens", &self.max_tokens)
+            .field("base_url", &self.base_url)
+            .finish()
+    }
 }
 
 fn default_provider() -> String {

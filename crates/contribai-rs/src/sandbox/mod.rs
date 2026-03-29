@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{info, warn};
+use tracing::warn;
 
 /// Result of sandbox code validation.
 #[derive(Debug, Clone)]
