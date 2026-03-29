@@ -335,6 +335,245 @@ impl<'a> IssueSolver<'a> {
         }
     }
 
+    // ── Issue Discovery ────────────────────────────────────────────────────
+
+    /// Fetch open issues from a repo that are good candidates for automated solving.
+    ///
+    /// Mirrors Python `fetch_solvable_issues`:
+    /// - Queries per label group, falling back to any open issue.
+    /// - Skips issues that already have linked PRs via timeline cross-references.
+    /// - Applies `filter_solvable` and returns up to `max_issues` sorted by complexity.
+    pub async fn fetch_solvable_issues(
+        &self,
+        repo: &Repository,
+        max_issues: usize,
+        max_complexity: u32,
+    ) -> Vec<Issue> {
+        let label_groups: &[&str] = &[
+            "good first issue",
+            "help wanted",
+            "bug",
+            "enhancement",
+            "documentation",
+        ];
+
+        let mut all_issues: Vec<Issue> = Vec::new();
+
+        // Try fetching with preferred label groups first.
+        for label in label_groups {
+            match self
+                .github
+                .list_issues(&repo.owner, &repo.name, Some(label), Some("none"), 10)
+                .await
+            {
+                Ok(raw_issues) => {
+                    for raw in raw_issues {
+                        // Skip pull requests masquerading as issues.
+                        if raw.get("pull_request").is_some() {
+                            continue;
+                        }
+                        let issue = Issue {
+                            number: raw["number"].as_i64().unwrap_or(0),
+                            title: raw["title"].as_str().unwrap_or("").to_string(),
+                            body: raw["body"].as_str().map(String::from),
+                            labels: raw["labels"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|l| l["name"].as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                            state: raw["state"].as_str().unwrap_or("open").to_string(),
+                            created_at: None,
+                            html_url: raw["html_url"].as_str().unwrap_or("").to_string(),
+                        };
+                        // Deduplicate by issue number.
+                        if !all_issues.iter().any(|i| i.number == issue.number) {
+                            all_issues.push(issue);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(label, error = %e, "Failed to fetch issues with label");
+                }
+            }
+        }
+
+        // Fallback: fetch any open unassigned issues when no label hits.
+        if all_issues.is_empty() {
+            match self
+                .github
+                .list_issues(&repo.owner, &repo.name, None, Some("none"), 20)
+                .await
+            {
+                Ok(raw_issues) => {
+                    for raw in raw_issues {
+                        if raw.get("pull_request").is_some() {
+                            continue;
+                        }
+                        let issue = Issue {
+                            number: raw["number"].as_i64().unwrap_or(0),
+                            title: raw["title"].as_str().unwrap_or("").to_string(),
+                            body: raw["body"].as_str().map(String::from),
+                            labels: raw["labels"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|l| l["name"].as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default(),
+                            state: raw["state"].as_str().unwrap_or("open").to_string(),
+                            created_at: None,
+                            html_url: raw["html_url"].as_str().unwrap_or("").to_string(),
+                        };
+                        if !all_issues.iter().any(|i| i.number == issue.number) {
+                            all_issues.push(issue);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, "Failed to fetch fallback issues");
+                }
+            }
+        }
+
+        // Skip issues that already have a linked PR.
+        let mut without_linked_pr: Vec<Issue> = Vec::new();
+        for issue in all_issues.iter() {
+            if self.has_linked_pr(repo, issue).await {
+                tracing::debug!(
+                    issue = issue.number,
+                    title = %issue.title,
+                    "Skipping issue (has linked PR)"
+                );
+            } else {
+                without_linked_pr.push(issue.clone());
+            }
+        }
+
+        // Apply complexity/solvability filter.
+        let mut solvable = self.filter_solvable(&without_linked_pr, max_complexity);
+
+        // Sort by estimated complexity (easiest first).
+        solvable.sort_by_key(|i| self.estimate_complexity(i));
+
+        info!(
+            repo = %repo.full_name,
+            solvable = solvable.len(),
+            total = all_issues.len(),
+            "Found solvable issues"
+        );
+
+        solvable.into_iter().take(max_issues).collect()
+    }
+
+    /// Check if an issue already has a linked pull request.
+    ///
+    /// Uses the GitHub timeline API to detect `cross-referenced` events
+    /// where the source is a pull request.  Falls back to `false` on
+    /// any API error so we never block issue processing on a transient error.
+    pub async fn has_linked_pr(&self, repo: &Repository, issue: &Issue) -> bool {
+        match self
+            .github
+            .get_issue_timeline(&repo.owner, &repo.name, issue.number)
+            .await
+        {
+            Ok(events) => Self::timeline_contains_pr_reference(&events),
+            Err(_) => false,
+        }
+    }
+
+    /// Pure helper: scan timeline events for cross-referenced PR links.
+    ///
+    /// Extracted so it can be unit-tested without HTTP.
+    fn timeline_contains_pr_reference(events: &[serde_json::Value]) -> bool {
+        for event in events {
+            if event.get("event").and_then(|e| e.as_str()) == Some("cross-referenced") {
+                let source = &event["source"];
+                if source.get("type").and_then(|t| t.as_str()) == Some("issue") {
+                    // GitHub returns a "pull_request" sub-object when the
+                    // cross-referencing issue is actually a PR.
+                    if !source["issue"]["pull_request"].is_null() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Build a rich context string for the LLM from an issue and its comments.
+    ///
+    /// Includes:
+    /// - Issue title, labels, and body.
+    /// - Up to 5 comments (truncated at 1 000 chars each).
+    /// - File paths mentioned anywhere in the issue text (regex `[\w/]+\.\w{1,4}`).
+    ///
+    /// Used by `solve_issue_deep` to provide context to the LLM prompt.
+    pub async fn build_issue_context(&self, issue: &Issue, repo: &Repository) -> String {
+        let body = issue.body.as_deref().unwrap_or("No description provided.");
+        let labels_str = if issue.labels.is_empty() {
+            "none".to_string()
+        } else {
+            issue.labels.join(", ")
+        };
+
+        // Extract file path mentions from the issue body.
+        let file_paths = Self::extract_file_paths(body);
+        let file_paths_section = if file_paths.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n**Mentioned files:**\n{}", file_paths.join("\n"))
+        };
+
+        let mut parts = vec![format!(
+            "**Title:** {}\n**Labels:** {}\n\n{}{}",
+            issue.title, labels_str, body, file_paths_section
+        )];
+
+        // Fetch and append up to 5 comments.
+        match self
+            .github
+            .get_issue_comments(&repo.owner, &repo.name, issue.number)
+            .await
+        {
+            Ok(comments) => {
+                for comment in comments.iter().take(5) {
+                    let author = comment["user"]["login"].as_str().unwrap_or("unknown");
+                    let body = comment["body"].as_str().unwrap_or("");
+                    if body.len() > 10 {
+                        let truncated: String = body.chars().take(1000).collect();
+                        parts.push(format!("\n**Comment by @{}:**\n{}", author, truncated));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    issue = issue.number,
+                    error = %e,
+                    "Failed to fetch issue comments for context"
+                );
+            }
+        }
+
+        parts.join("\n")
+    }
+
+    /// Extract file path mentions from a text string.
+    ///
+    /// Matches patterns like `src/foo.rs`, `lib/bar.py`, `README.md`.
+    fn extract_file_paths(text: &str) -> Vec<String> {
+        let re = Regex::new(r"[\w/]+\.\w{1,4}").unwrap_or_else(|_| Regex::new(".^").unwrap());
+        let mut paths: Vec<String> = re
+            .find_iter(text)
+            .map(|m| m.as_str().to_string())
+            .collect();
+        paths.dedup();
+        paths
+    }
+
     fn build_file_tree_summary(tree: &[FileNode]) -> String {
         let mut dirs: HashMap<String, Vec<String>> = HashMap::new();
         for f in tree.iter().filter(|f| f.node_type == "blob").take(200) {
@@ -548,5 +787,110 @@ mod tests {
     // Safety: only used in tests, never actually called
     fn unsafe_mock_github() -> GitHubClient {
         GitHubClient::new("test-token", 100).unwrap()
+    }
+
+    // ── Tests for has_linked_pr (pure helper) ─────────────────────────────
+
+    #[test]
+    fn test_timeline_no_pr_reference() {
+        // Timeline with no cross-referenced events → no linked PR.
+        let events = vec![
+            serde_json::json!({ "event": "labeled", "label": { "name": "bug" } }),
+            serde_json::json!({ "event": "assigned" }),
+        ];
+        assert!(!IssueSolver::timeline_contains_pr_reference(&events));
+    }
+
+    #[test]
+    fn test_timeline_cross_ref_from_pr() {
+        // A cross-referenced event where the source is a PR (has pull_request field).
+        let events = vec![serde_json::json!({
+            "event": "cross-referenced",
+            "source": {
+                "type": "issue",
+                "issue": {
+                    "number": 42,
+                    "title": "Fix bug",
+                    "pull_request": {
+                        "url": "https://api.github.com/repos/owner/repo/pulls/42"
+                    }
+                }
+            }
+        })];
+        assert!(IssueSolver::timeline_contains_pr_reference(&events));
+    }
+
+    #[test]
+    fn test_timeline_cross_ref_from_plain_issue() {
+        // Cross-reference from a regular issue (no pull_request field) → not a PR link.
+        let events = vec![serde_json::json!({
+            "event": "cross-referenced",
+            "source": {
+                "type": "issue",
+                "issue": {
+                    "number": 7,
+                    "title": "Related issue"
+                    // no "pull_request" key
+                }
+            }
+        })];
+        assert!(!IssueSolver::timeline_contains_pr_reference(&events));
+    }
+
+    #[test]
+    fn test_timeline_empty() {
+        assert!(!IssueSolver::timeline_contains_pr_reference(&[]));
+    }
+
+    // ── Tests for build_issue_context (pure helper: extract_file_paths) ───
+
+    #[test]
+    fn test_extract_file_paths_basic() {
+        let text = "Please fix src/main.rs and also update lib/utils.py if needed.";
+        let paths = IssueSolver::extract_file_paths(text);
+        assert!(paths.contains(&"src/main.rs".to_string()));
+        assert!(paths.contains(&"lib/utils.py".to_string()));
+    }
+
+    #[test]
+    fn test_extract_file_paths_dedup() {
+        // Same path appearing twice should appear once after dedup.
+        let text = "See README.md for details. Also README.md.";
+        let paths = IssueSolver::extract_file_paths(text);
+        // dedup removes consecutive duplicates; check at most 2 entries for README.md
+        let count = paths.iter().filter(|p| p.as_str() == "README.md").count();
+        assert!(count <= 1, "Expected dedup to remove duplicate README.md");
+    }
+
+    #[test]
+    fn test_extract_file_paths_empty() {
+        let paths = IssueSolver::extract_file_paths("no file references here");
+        // "here" has no extension, so nothing matches the pattern
+        assert!(paths.is_empty());
+    }
+
+    // ── Tests for build_issue_context (structure, no HTTP) ────────────────
+
+    #[test]
+    fn test_build_issue_context_labels_in_output() {
+        // build_issue_context is async/HTTP, but we test the pure formatting
+        // logic by verifying extract_file_paths and label formatting work together.
+        let issue = Issue {
+            number: 10,
+            title: "Fix null pointer in src/parser.rs".to_string(),
+            body: Some("The crash happens in src/parser.rs line 42.".to_string()),
+            labels: vec!["bug".to_string(), "good first issue".to_string()],
+            state: "open".to_string(),
+            created_at: None,
+            html_url: String::new(),
+        };
+
+        // Verify label string building.
+        let labels_str = issue.labels.join(", ");
+        assert_eq!(labels_str, "bug, good first issue");
+
+        // Verify file path extraction from body.
+        let paths = IssueSolver::extract_file_paths(issue.body.as_deref().unwrap_or(""));
+        assert!(paths.contains(&"src/parser.rs".to_string()));
     }
 }

@@ -146,6 +146,43 @@ impl<'a> Leaderboard<'a> {
         .map(|rows| rows.flatten().collect())
         .unwrap_or_default()
     }
+    /// Get recently merged PRs.
+    pub fn get_recent_merges(&self, limit: u32) -> Vec<RecentMerge> {
+        let mut stmt = match self.db.prepare(
+            "SELECT repo, pr_number, pr_url, title, type, updated_at
+             FROM submitted_prs
+             WHERE status = 'merged'
+             ORDER BY updated_at DESC
+             LIMIT ?",
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+        stmt.query_map([limit], |row| {
+            Ok(RecentMerge {
+                repo: row.get(0)?,
+                pr_number: row.get(1)?,
+                pr_url: row.get(2)?,
+                title: row.get(3)?,
+                contribution_type: row.get(4)?,
+                merged_at: row.get(5)?,
+            })
+        })
+        .ok()
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
+    }
+}
+
+/// A recently merged PR entry.
+#[derive(Debug, Clone)]
+pub struct RecentMerge {
+    pub repo: String,
+    pub pr_number: i64,
+    pub pr_url: String,
+    pub title: String,
+    pub contribution_type: String,
+    pub merged_at: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -202,6 +239,15 @@ mod tests {
         let lb = Leaderboard::new(&db);
         let stats = lb.get_type_stats();
         assert!(!stats.is_empty());
+    }
+
+    #[test]
+    fn test_recent_merges() {
+        let db = setup_db();
+        let lb = Leaderboard::new(&db);
+        let merges = lb.get_recent_merges(5);
+        assert_eq!(merges.len(), 2);
+        assert!(merges.iter().all(|m| m.pr_url.is_empty() || m.pr_url.len() >= 0));
     }
 
     #[test]

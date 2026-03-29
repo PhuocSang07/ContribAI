@@ -27,6 +27,14 @@ pub struct ContribAIConfig {
     pub storage: StorageConfig,
     #[serde(default)]
     pub multi_model: MultiModelConfig,
+    #[serde(default)]
+    pub scheduler: SchedulerConfig,
+    #[serde(default)]
+    pub quotas: QuotaConfig,
+    #[serde(default)]
+    pub notifications: NotificationConfig,
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
 }
 
 impl ContribAIConfig {
@@ -71,6 +79,10 @@ impl Default for ContribAIConfig {
             pipeline: PipelineConfig::default(),
             storage: StorageConfig::default(),
             multi_model: MultiModelConfig::default(),
+            scheduler: SchedulerConfig::default(),
+            quotas: QuotaConfig::default(),
+            notifications: NotificationConfig::default(),
+            sandbox: SandboxConfig::default(),
         }
     }
 }
@@ -192,10 +204,40 @@ pub struct ContributionConfig {
     pub max_changes_per_pr: usize,
     #[serde(default)]
     pub sign_off: bool,
+    /// Commit message convention: "conventional", "angular", "none".
+    #[serde(default = "default_commit_convention")]
+    pub commit_convention: String,
+    /// PR description style: "descriptive", "minimal".
+    #[serde(default = "default_pr_style")]
+    pub pr_style: String,
+    /// Whether to GPG-sign commits.
+    #[serde(default = "default_sign_commits")]
+    pub sign_commits: bool,
+    /// Maximum character length for PR body.
+    #[serde(default = "default_max_pr_body_length")]
+    pub max_pr_body_length: usize,
+    /// Whether to include test changes in PRs.
+    #[serde(default = "default_include_tests")]
+    pub include_tests: bool,
 }
 
 fn default_max_changes_per_pr() -> usize {
     5
+}
+fn default_commit_convention() -> String {
+    "conventional".to_string()
+}
+fn default_pr_style() -> String {
+    "descriptive".to_string()
+}
+fn default_sign_commits() -> bool {
+    true
+}
+fn default_max_pr_body_length() -> usize {
+    4000
+}
+fn default_include_tests() -> bool {
+    true
 }
 
 impl Default for ContributionConfig {
@@ -203,6 +245,11 @@ impl Default for ContributionConfig {
         Self {
             max_changes_per_pr: default_max_changes_per_pr(),
             sign_off: false,
+            commit_convention: default_commit_convention(),
+            pr_style: default_pr_style(),
+            sign_commits: default_sign_commits(),
+            max_pr_body_length: default_max_pr_body_length(),
+            include_tests: default_include_tests(),
         }
     }
 }
@@ -340,6 +387,118 @@ impl Default for MultiModelConfig {
     }
 }
 
+/// Scheduler configuration for cron-based runs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchedulerConfig {
+    /// Cron expression controlling run frequency.
+    #[serde(default = "default_scheduler_cron")]
+    pub cron: String,
+    /// Whether scheduled runs are active.
+    #[serde(default = "default_scheduler_enabled")]
+    pub enabled: bool,
+}
+
+fn default_scheduler_cron() -> String {
+    "0 */6 * * *".to_string()
+}
+fn default_scheduler_enabled() -> bool {
+    true
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            cron: default_scheduler_cron(),
+            enabled: default_scheduler_enabled(),
+        }
+    }
+}
+
+/// API usage quota configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotaConfig {
+    /// Maximum GitHub API calls per day.
+    #[serde(default = "default_github_daily")]
+    pub github_daily: u32,
+    /// Maximum LLM API calls per day.
+    #[serde(default = "default_llm_daily")]
+    pub llm_daily: u32,
+    /// Maximum LLM tokens consumed per day.
+    #[serde(default = "default_llm_tokens_daily")]
+    pub llm_tokens_daily: u64,
+}
+
+fn default_github_daily() -> u32 {
+    1000
+}
+fn default_llm_daily() -> u32 {
+    500
+}
+fn default_llm_tokens_daily() -> u64 {
+    1_000_000
+}
+
+impl Default for QuotaConfig {
+    fn default() -> Self {
+        Self {
+            github_daily: default_github_daily(),
+            llm_daily: default_llm_daily(),
+            llm_tokens_daily: default_llm_tokens_daily(),
+        }
+    }
+}
+
+/// Notification channel configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationConfig {
+    /// Slack incoming webhook URL.
+    pub slack_webhook: Option<String>,
+    /// Discord webhook URL.
+    pub discord_webhook: Option<String>,
+    /// Telegram bot token.
+    pub telegram_token: Option<String>,
+    /// Telegram chat ID to send messages to.
+    pub telegram_chat_id: Option<String>,
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            slack_webhook: None,
+            discord_webhook: None,
+            telegram_token: None,
+            telegram_chat_id: None,
+        }
+    }
+}
+
+/// Sandbox execution configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    /// Whether sandboxed code execution is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Override Docker image for the sandbox container.
+    pub docker_image: Option<String>,
+    /// Sandbox execution timeout in seconds.
+    #[serde(default = "default_sandbox_timeout")]
+    pub timeout_seconds: u64,
+}
+
+fn default_sandbox_timeout() -> u64 {
+    30
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            docker_image: None,
+            timeout_seconds: default_sandbox_timeout(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +539,187 @@ analysis:
         };
         let path = storage.resolved_db_path();
         assert_eq!(path, PathBuf::from("/tmp/test/memory.db"));
+    }
+
+    // -------------------------------------------------------------------------
+    // SchedulerConfig
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_scheduler_config_defaults() {
+        let s = SchedulerConfig::default();
+        assert_eq!(s.cron, "0 */6 * * *");
+        assert!(s.enabled);
+    }
+
+    #[test]
+    fn test_scheduler_config_deser_empty() {
+        let s: SchedulerConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.cron, "0 */6 * * *");
+        assert!(s.enabled);
+    }
+
+    #[test]
+    fn test_scheduler_config_deser_partial() {
+        let yaml = "cron: \"0 0 * * *\"";
+        let s: SchedulerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(s.cron, "0 0 * * *");
+        assert!(s.enabled); // default preserved
+    }
+
+    // -------------------------------------------------------------------------
+    // QuotaConfig
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_quota_config_defaults() {
+        let q = QuotaConfig::default();
+        assert_eq!(q.github_daily, 1000);
+        assert_eq!(q.llm_daily, 500);
+        assert_eq!(q.llm_tokens_daily, 1_000_000);
+    }
+
+    #[test]
+    fn test_quota_config_deser_empty() {
+        let q: QuotaConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(q.github_daily, 1000);
+        assert_eq!(q.llm_daily, 500);
+        assert_eq!(q.llm_tokens_daily, 1_000_000);
+    }
+
+    #[test]
+    fn test_quota_config_deser_partial() {
+        let yaml = "github_daily: 200";
+        let q: QuotaConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(q.github_daily, 200);
+        assert_eq!(q.llm_daily, 500); // default preserved
+    }
+
+    // -------------------------------------------------------------------------
+    // NotificationConfig
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_notification_config_defaults() {
+        let n = NotificationConfig::default();
+        assert!(n.slack_webhook.is_none());
+        assert!(n.discord_webhook.is_none());
+        assert!(n.telegram_token.is_none());
+        assert!(n.telegram_chat_id.is_none());
+    }
+
+    #[test]
+    fn test_notification_config_deser_empty() {
+        let n: NotificationConfig = serde_json::from_str("{}").unwrap();
+        assert!(n.slack_webhook.is_none());
+        assert!(n.discord_webhook.is_none());
+    }
+
+    #[test]
+    fn test_notification_config_deser_with_values() {
+        let yaml = "slack_webhook: \"https://hooks.slack.com/test\"";
+        let n: NotificationConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            n.slack_webhook.as_deref(),
+            Some("https://hooks.slack.com/test")
+        );
+        assert!(n.discord_webhook.is_none());
+    }
+
+    // -------------------------------------------------------------------------
+    // SandboxConfig
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_sandbox_config_defaults() {
+        let s = SandboxConfig::default();
+        assert!(!s.enabled);
+        assert!(s.docker_image.is_none());
+        assert_eq!(s.timeout_seconds, 30);
+    }
+
+    #[test]
+    fn test_sandbox_config_deser_empty() {
+        let s: SandboxConfig = serde_json::from_str("{}").unwrap();
+        assert!(!s.enabled);
+        assert_eq!(s.timeout_seconds, 30);
+    }
+
+    #[test]
+    fn test_sandbox_config_deser_partial() {
+        let yaml = "enabled: true\ndocker_image: \"rust:1.78\"";
+        let s: SandboxConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(s.enabled);
+        assert_eq!(s.docker_image.as_deref(), Some("rust:1.78"));
+        assert_eq!(s.timeout_seconds, 30); // default preserved
+    }
+
+    // -------------------------------------------------------------------------
+    // ContributionConfig new fields
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_contribution_config_new_field_defaults() {
+        let c = ContributionConfig::default();
+        assert_eq!(c.commit_convention, "conventional");
+        assert_eq!(c.pr_style, "descriptive");
+        assert!(c.sign_commits);
+        assert_eq!(c.max_pr_body_length, 4000);
+        assert!(c.include_tests);
+    }
+
+    #[test]
+    fn test_contribution_config_deser_empty() {
+        let c: ContributionConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(c.commit_convention, "conventional");
+        assert_eq!(c.pr_style, "descriptive");
+        assert!(c.sign_commits);
+        assert_eq!(c.max_pr_body_length, 4000);
+        assert!(c.include_tests);
+    }
+
+    // -------------------------------------------------------------------------
+    // ContribAIConfig: new top-level fields present
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_root_config_has_new_fields() {
+        let cfg = ContribAIConfig::default();
+        // scheduler
+        assert!(cfg.scheduler.enabled);
+        assert_eq!(cfg.scheduler.cron, "0 */6 * * *");
+        // quotas
+        assert_eq!(cfg.quotas.github_daily, 1000);
+        // notifications
+        assert!(cfg.notifications.slack_webhook.is_none());
+        // sandbox
+        assert!(!cfg.sandbox.enabled);
+        assert_eq!(cfg.sandbox.timeout_seconds, 30);
+    }
+
+    #[test]
+    fn test_root_config_new_fields_deser_from_yaml() {
+        let yaml = r#"
+scheduler:
+  enabled: false
+  cron: "0 0 * * *"
+quotas:
+  github_daily: 50
+notifications:
+  slack_webhook: "https://hooks.slack.com/x"
+sandbox:
+  enabled: true
+  timeout_seconds: 60
+"#;
+        let cfg: ContribAIConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(!cfg.scheduler.enabled);
+        assert_eq!(cfg.scheduler.cron, "0 0 * * *");
+        assert_eq!(cfg.quotas.github_daily, 50);
+        assert_eq!(
+            cfg.notifications.slack_webhook.as_deref(),
+            Some("https://hooks.slack.com/x")
+        );
+        assert!(cfg.sandbox.enabled);
+        assert_eq!(cfg.sandbox.timeout_seconds, 60);
     }
 }

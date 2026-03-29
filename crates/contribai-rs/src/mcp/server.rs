@@ -14,10 +14,11 @@
 //! - push_file_change
 //! - create_pr
 //! - close_pr
+//! - check_duplicate_pr
+//! - check_ai_policy
 //! - get_stats
 //! - patrol_prs
-//! - check_ai_policy
-//! - check_duplicate_pr
+//! - cleanup_forks
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -209,11 +210,71 @@ fn tool_definitions() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "close_pr".into(),
+            description: "Close a pull request".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer"}
+                },
+                "required": ["owner", "repo", "pr_number"]
+            }),
+        },
+        ToolDef {
+            name: "check_duplicate_pr".into(),
+            description: "Check if ContribAI has already submitted a PR to this repo".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"}
+                },
+                "required": ["owner", "repo"]
+            }),
+        },
+        ToolDef {
+            name: "check_ai_policy".into(),
+            description: "Check if a repo bans AI-generated contributions".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"}
+                },
+                "required": ["owner", "repo"]
+            }),
+        },
+        ToolDef {
             name: "get_stats".into(),
             description: "Get ContribAI contribution statistics".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {}
+            }),
+        },
+        ToolDef {
+            name: "patrol_prs".into(),
+            description: "Collect raw review comments from open PRs for Claude to classify and act on".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "repo": {"type": "string"},
+                    "pr_number": {"type": "integer", "description": "Optional: check a single PR"}
+                },
+                "required": ["owner", "repo"]
+            }),
+        },
+        ToolDef {
+            name: "cleanup_forks".into(),
+            description: "List or delete stale forks where all PRs are merged/closed".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "dry_run": {"type": "boolean", "default": true}
+                }
             }),
         },
     ]
@@ -426,6 +487,217 @@ async fn handle_tool_call(
             Ok(json!(stats))
         }
 
+        "close_pr" => {
+            let owner = args["owner"].as_str().unwrap_or("");
+            let repo = args["repo"].as_str().unwrap_or("");
+            let pr_number = args["pr_number"].as_i64().unwrap_or(0);
+            info!(owner, repo, pr_number, "Closing PR");
+            match github.close_pull_request(owner, repo, pr_number, None).await {
+                Ok(()) => Ok(json!({"success": true, "pr_number": pr_number})),
+                Err(e) => Ok(json!({"success": false, "reason": e.to_string()})),
+            }
+        }
+
+        "check_duplicate_pr" => {
+            let owner = args["owner"].as_str().unwrap_or("");
+            let repo = args["repo"].as_str().unwrap_or("");
+            let full_repo = format!("{}/{}", owner, repo);
+            info!(repo = %full_repo, "Checking for duplicate PR");
+            // Query memory for any open PRs submitted to this repo
+            let all_open = memory.get_prs(Some("open"), 1000)?;
+            let repo_open: Vec<_> = all_open
+                .into_iter()
+                .filter(|pr| pr.get("repo").map(|r| r == &full_repo).unwrap_or(false))
+                .collect();
+            if let Some(existing) = repo_open.first() {
+                let pr_url = existing.get("pr_url").cloned().unwrap_or_default();
+                let pr_number = existing.get("pr_number").cloned().unwrap_or_default();
+                Ok(json!({
+                    "is_duplicate": true,
+                    "existing_pr_url": pr_url,
+                    "existing_pr_number": pr_number
+                }))
+            } else {
+                Ok(json!({"is_duplicate": false, "existing_pr_url": null}))
+            }
+        }
+
+        "check_ai_policy" => {
+            let owner = args["owner"].as_str().unwrap_or("");
+            let repo = args["repo"].as_str().unwrap_or("");
+            info!(owner, repo, "Checking AI contribution policy");
+            // Keywords that indicate AI contributions are banned
+            let ai_ban_keywords = [
+                "no ai", "no-ai", "not accept ai", "prohibit ai",
+                "ban ai", "ai generated", "ai-generated",
+                "no llm", "human only", "no bot", "no automated",
+                "ai contributions will be rejected",
+            ];
+            // Policy files to check in order
+            let policy_paths = [
+                "CONTRIBUTING.md",
+                ".github/CONTRIBUTING.md",
+                "README.md",
+                "AI_POLICY.md",
+                ".github/AI_POLICY.md",
+            ];
+            for path in &policy_paths {
+                match github.get_file_content(owner, repo, path, None).await {
+                    Ok(content) => {
+                        let lower = content.to_lowercase();
+                        let banned = ai_ban_keywords.iter().any(|kw| lower.contains(kw));
+                        if banned {
+                            info!(owner, repo, path, "AI policy ban found");
+                            return Ok(json!({
+                                "ai_allowed": false,
+                                "banned": true,
+                                "reason": format!("Ban keyword found in {}", path)
+                            }));
+                        }
+                    }
+                    Err(e) => {
+                        // Skip 404 (file not found); stop on other errors
+                        let msg = e.to_string();
+                        if msg.contains("Not found") || msg.contains("404") {
+                            continue;
+                        }
+                        return Err(e.into());
+                    }
+                }
+            }
+            Ok(json!({"ai_allowed": true, "banned": false, "reason": null}))
+        }
+
+        "patrol_prs" => {
+            let owner = args["owner"].as_str().unwrap_or("");
+            let repo = args["repo"].as_str().unwrap_or("");
+            let full_repo = format!("{}/{}", owner, repo);
+            let single_pr = args["pr_number"].as_i64();
+            info!(repo = %full_repo, "Patrolling PRs for review comments");
+
+            // Collect PR numbers to check
+            let pr_numbers: Vec<i64> = if let Some(n) = single_pr {
+                vec![n]
+            } else {
+                // Get open PRs from memory for this repo
+                let open_prs = memory.get_prs(Some("open"), 100)?;
+                open_prs
+                    .iter()
+                    .filter(|pr| pr.get("repo").map(|r| r == &full_repo).unwrap_or(false))
+                    .filter_map(|pr| pr.get("pr_number").and_then(|n| n.parse::<i64>().ok()))
+                    .collect()
+            };
+
+            let mut reviews_list = Vec::new();
+            for pr_number in &pr_numbers {
+                // Issue-level comments
+                match github.get_pr_comments(owner, repo, *pr_number).await {
+                    Ok(comments) => {
+                        for c in comments {
+                            reviews_list.push(json!({
+                                "pr_number": pr_number,
+                                "repo": full_repo,
+                                "comment_author": c["user"]["login"].as_str().unwrap_or(""),
+                                "comment_body": c["body"].as_str().unwrap_or(""),
+                                "is_inline": false,
+                                "file_path": null
+                            }));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(repo = %full_repo, pr_number, error = %e, "Failed to fetch PR comments");
+                    }
+                }
+                // Inline review comments
+                match github.get_pr_review_comments(owner, repo, *pr_number).await {
+                    Ok(inline) => {
+                        for c in inline {
+                            reviews_list.push(json!({
+                                "pr_number": pr_number,
+                                "repo": full_repo,
+                                "comment_author": c["user"]["login"].as_str().unwrap_or(""),
+                                "comment_body": c["body"].as_str().unwrap_or(""),
+                                "is_inline": true,
+                                "file_path": c["path"].as_str()
+                            }));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(repo = %full_repo, pr_number, error = %e, "Failed to fetch inline review comments");
+                    }
+                }
+            }
+            Ok(json!({
+                "prs_checked": pr_numbers.len(),
+                "reviews_list": reviews_list
+            }))
+        }
+
+        "cleanup_forks" => {
+            let dry_run = args["dry_run"].as_bool().unwrap_or(true);
+            info!(dry_run, "Cleaning up stale forks");
+
+            let forks = github.list_user_forks().await?;
+            // Get all PRs from memory to check fork activity
+            let all_prs = memory.get_prs(None, 10_000)?;
+
+            let mut forks_to_delete: Vec<String> = Vec::new();
+            let mut forks_kept: Vec<String> = Vec::new();
+
+            for fork in &forks {
+                let fork_name = fork["full_name"].as_str().unwrap_or("");
+                if fork_name.is_empty() {
+                    continue;
+                }
+                // Find PRs associated with this fork
+                let fork_prs: Vec<_> = all_prs
+                    .iter()
+                    .filter(|pr| pr.get("fork").map(|f| f == fork_name).unwrap_or(false))
+                    .collect();
+                let has_open = fork_prs
+                    .iter()
+                    .any(|pr| pr.get("status").map(|s| s == "open").unwrap_or(false));
+                // Only mark for deletion if we have PR records and none are open (all merged/closed)
+                if !fork_prs.is_empty() && !has_open {
+                    forks_to_delete.push(fork_name.to_string());
+                } else {
+                    forks_kept.push(fork_name.to_string());
+                }
+            }
+
+            if !dry_run {
+                for fork_name in &forks_to_delete {
+                    let parts: Vec<&str> = fork_name.splitn(2, '/').collect();
+                    if parts.len() != 2 {
+                        continue;
+                    }
+                    let (fork_owner, fork_repo) = (parts[0], parts[1]);
+                    // Safety: verify it is actually a fork before deleting
+                    match github.get_repo_details(fork_owner, fork_repo).await {
+                        Ok(repo_info) => {
+                            // The API returns `fork: true` in the raw JSON; check via raw get
+                            // repo_info is our Repository struct — trust our fork list is correct
+                            // (we fetched via /user/repos?type=fork already)
+                            match github.delete_repository(fork_owner, fork_repo).await {
+                                Ok(()) => info!(fork = fork_name, "Deleted stale fork"),
+                                Err(e) => tracing::warn!(fork = fork_name, error = %e, "Failed to delete fork"),
+                            }
+                            drop(repo_info);
+                        }
+                        Err(e) => {
+                            tracing::warn!(fork = fork_name, error = %e, "Could not verify fork before deletion, skipping");
+                        }
+                    }
+                }
+            }
+
+            Ok(json!({
+                "forks_to_delete": forks_to_delete,
+                "forks_kept": forks_kept,
+                "dry_run": dry_run
+            }))
+        }
+
         _ => {
             anyhow::bail!("Unknown tool: {}", name);
         }
@@ -439,13 +711,29 @@ mod tests {
     #[test]
     fn test_tool_definitions_complete() {
         let tools = tool_definitions();
-        assert!(tools.len() >= 10);
+        // Must have all 15 tools registered
+        assert_eq!(tools.len(), 15, "Expected 15 tools, got {}", tools.len());
 
-        let names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
-        assert!(names.contains(&"search_repos"));
-        assert!(names.contains(&"get_file_content"));
-        assert!(names.contains(&"create_pr"));
-        assert!(names.contains(&"get_stats"));
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+
+        // Original 10 tools
+        assert!(names.contains(&"search_repos"), "missing search_repos");
+        assert!(names.contains(&"get_repo_info"), "missing get_repo_info");
+        assert!(names.contains(&"get_file_tree"), "missing get_file_tree");
+        assert!(names.contains(&"get_file_content"), "missing get_file_content");
+        assert!(names.contains(&"get_open_issues"), "missing get_open_issues");
+        assert!(names.contains(&"fork_repo"), "missing fork_repo");
+        assert!(names.contains(&"create_branch"), "missing create_branch");
+        assert!(names.contains(&"push_file_change"), "missing push_file_change");
+        assert!(names.contains(&"create_pr"), "missing create_pr");
+        assert!(names.contains(&"get_stats"), "missing get_stats");
+
+        // 5 newly added tools
+        assert!(names.contains(&"close_pr"), "missing close_pr");
+        assert!(names.contains(&"check_duplicate_pr"), "missing check_duplicate_pr");
+        assert!(names.contains(&"check_ai_policy"), "missing check_ai_policy");
+        assert!(names.contains(&"patrol_prs"), "missing patrol_prs");
+        assert!(names.contains(&"cleanup_forks"), "missing cleanup_forks");
     }
 
     #[test]

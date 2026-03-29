@@ -3,6 +3,7 @@
 //! Port from Python `llm/context.py`.
 //! Token estimation, context window chunking, prompt building.
 
+use crate::core::models::FileNode;
 use tracing::debug;
 
 /// Rough token estimate: ~4 chars per token.
@@ -140,6 +141,30 @@ pub fn build_repo_context_prompt(
     parts.join("\n\n")
 }
 
+/// Format file tree nodes into a readable string.
+///
+/// Port of Python `format_file_tree()` from `context.py`.
+pub fn format_file_tree(nodes: &[FileNode], max_depth: usize) -> String {
+    let mut sorted: Vec<&FileNode> = nodes.iter().collect();
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let mut lines = Vec::new();
+    for node in &sorted {
+        let depth = node.path.matches('/').count();
+        if depth > max_depth {
+            continue;
+        }
+        let prefix = if node.node_type == "tree" { "D " } else { "F " };
+        let indent = "  ".repeat(depth);
+        let name = node.path.rsplit('/').next().unwrap_or(&node.path);
+        lines.push(format!("{indent}{prefix}{name}"));
+        if lines.len() >= 100 {
+            break;
+        }
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +219,29 @@ mod tests {
         );
         assert!(prompt.contains("owner/repo"));
         assert!(prompt.contains("README"));
+    }
+
+    #[test]
+    fn test_format_file_tree() {
+        let nodes = vec![
+            FileNode { path: "src".into(), node_type: "tree".into(), size: 0, sha: String::new() },
+            FileNode { path: "src/main.rs".into(), node_type: "blob".into(), size: 100, sha: String::new() },
+            FileNode { path: "src/lib.rs".into(), node_type: "blob".into(), size: 200, sha: String::new() },
+            FileNode { path: "README.md".into(), node_type: "blob".into(), size: 50, sha: String::new() },
+        ];
+        let result = format_file_tree(&nodes, 3);
+        assert!(result.contains("F README.md"));
+        assert!(result.contains("D src"));
+        assert!(result.contains("  F main.rs"));
+    }
+
+    #[test]
+    fn test_format_file_tree_depth_limit() {
+        let nodes = vec![
+            FileNode { path: "a/b/c/d/deep.rs".into(), node_type: "blob".into(), size: 0, sha: String::new() },
+        ];
+        let result = format_file_tree(&nodes, 2);
+        assert!(result.is_empty()); // depth 4 > max 2
     }
 
     #[test]

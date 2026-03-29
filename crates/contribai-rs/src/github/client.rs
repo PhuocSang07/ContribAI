@@ -912,6 +912,27 @@ impl GitHubClient {
         .await
     }
 
+    /// Create an issue with labels.
+    ///
+    /// If the label does not exist on the target repository the API returns 422.
+    /// Callers should catch the error and fall back to `create_issue` without labels.
+    pub async fn create_issue_with_labels(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        body: &str,
+        labels: &[&str],
+    ) -> Result<Value> {
+        let labels_json: Vec<Value> =
+            labels.iter().map(|l| Value::String(l.to_string())).collect();
+        self.post(
+            &format!("/repos/{}/{}/issues", owner, repo),
+            &serde_json::json!({ "title": title, "body": body, "labels": labels_json }),
+        )
+        .await
+    }
+
     /// Close an issue.
     pub async fn close_issue(
         &self,
@@ -933,6 +954,77 @@ impl GitHubClient {
         )
         .await?;
         Ok(())
+    }
+
+    /// Get comments on an issue (uses the issues comments endpoint).
+    ///
+    /// GitHub's issues comments API is shared with PRs — calling it with
+    /// an issue number returns that issue's comments.
+    pub async fn get_issue_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+    ) -> Result<Vec<Value>> {
+        let data = self
+            .get(&format!(
+                "/repos/{}/{}/issues/{}/comments",
+                owner, repo, issue_number
+            ))
+            .await?;
+        Ok(data.as_array().cloned().unwrap_or_default())
+    }
+
+    /// Get the timeline events for an issue.
+    ///
+    /// Useful for detecting cross-references from pull requests
+    /// (`event == "cross-referenced"` with `source.type == "issue"` and
+    /// `source.issue.pull_request` present).
+    pub async fn get_issue_timeline(
+        &self,
+        owner: &str,
+        repo: &str,
+        issue_number: i64,
+    ) -> Result<Vec<Value>> {
+        let data = self
+            .get_with_params(
+                &format!(
+                    "/repos/{}/{}/issues/{}/timeline",
+                    owner, repo, issue_number
+                ),
+                &[("per_page", "100")],
+            )
+            .await?;
+        Ok(data.as_array().cloned().unwrap_or_default())
+    }
+
+    /// List open issues for a repository with optional label and assignee filters.
+    ///
+    /// Pass `labels` as a comma-separated string (e.g. `"bug,enhancement"`).
+    /// Pass `assignee = Some("none")` to restrict to unassigned issues.
+    pub async fn list_issues(
+        &self,
+        owner: &str,
+        repo: &str,
+        labels: Option<&str>,
+        assignee: Option<&str>,
+        per_page: u32,
+    ) -> Result<Vec<Value>> {
+        let pp = per_page.min(100).to_string();
+        let mut params: Vec<(&str, &str)> = vec![("state", "open"), ("per_page", &pp)];
+        if let Some(l) = labels {
+            params.push(("labels", l));
+        }
+        if let Some(a) = assignee {
+            params.push(("assignee", a));
+        }
+        let data = self
+            .get_with_params(
+                &format!("/repos/{}/{}/issues", owner, repo),
+                &params,
+            )
+            .await?;
+        Ok(data.as_array().cloned().unwrap_or_default())
     }
 }
 

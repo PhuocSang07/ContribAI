@@ -96,6 +96,42 @@ pub fn load_profile_yaml(yaml: &str) -> Option<ContribProfile> {
     serde_yaml::from_str(yaml).ok()
 }
 
+/// Apply a profile's settings to a mutable config map.
+///
+/// Port of Python `apply_profile()`. Merges profile values into a
+/// serde_json::Value config (typically loaded from TOML/JSON).
+pub fn apply_profile(config: &mut serde_json::Value, profile: &ContribProfile) {
+    // Ensure config is an object before taking a mutable reference to its map.
+    if !config.is_object() {
+        *config = serde_json::json!({});
+    }
+    let obj = config.as_object_mut().expect("config must be an object");
+
+    if !profile.analyzers.is_empty() {
+        let analysis = obj
+            .entry("analysis")
+            .or_insert_with(|| serde_json::json!({}));
+        analysis["enabled_analyzers"] = serde_json::json!(profile.analyzers);
+    }
+    if !profile.contribution_types.is_empty() {
+        let contribution = obj
+            .entry("contribution")
+            .or_insert_with(|| serde_json::json!({}));
+        contribution["enabled_types"] = serde_json::json!(profile.contribution_types);
+    }
+
+    let analysis = obj
+        .entry("analysis")
+        .or_insert_with(|| serde_json::json!({}));
+    analysis["severity_threshold"] = serde_json::json!(profile.severity_threshold);
+
+    let github = obj
+        .entry("github")
+        .or_insert_with(|| serde_json::json!({}));
+    github["max_prs_per_day"] = serde_json::json!(profile.max_prs_per_day);
+    github["max_repos_per_run"] = serde_json::json!(profile.max_repos_per_run);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +159,25 @@ mod tests {
         let p = get_profile("gentle").unwrap();
         assert!(p.dry_run);
         assert_eq!(p.max_prs_per_day, 3);
+    }
+
+    #[test]
+    fn test_apply_profile() {
+        let profile = get_profile("security-focused").unwrap();
+        let mut config = serde_json::json!({});
+        apply_profile(&mut config, &profile);
+        assert_eq!(
+            config["analysis"]["severity_threshold"],
+            serde_json::json!("high")
+        );
+        assert_eq!(
+            config["github"]["max_prs_per_day"],
+            serde_json::json!(5)
+        );
+        assert!(config["analysis"]["enabled_analyzers"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("security")));
     }
 
     #[test]
