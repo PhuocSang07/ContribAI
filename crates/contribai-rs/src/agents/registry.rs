@@ -7,7 +7,9 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{info, error};
+
 
 /// Roles available for sub-agents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,7 +73,7 @@ pub trait SubAgent: Send + Sync {
 
 /// Registry for discovering and managing sub-agents.
 pub struct AgentRegistry {
-    agents: HashMap<AgentRole, Box<dyn SubAgent>>,
+    agents: HashMap<AgentRole, Arc<dyn SubAgent>>,
     max_concurrent: usize,
 }
 
@@ -84,7 +86,8 @@ impl AgentRegistry {
     }
 
     /// Register a sub-agent.
-    pub fn register(&mut self, agent: Box<dyn SubAgent>) {
+    pub fn register(&mut self, agent: impl SubAgent + 'static) {
+        let agent = Arc::new(agent);
         let role = agent.role();
         info!(
             role = role.as_str(),
@@ -95,8 +98,8 @@ impl AgentRegistry {
     }
 
     /// Get a registered agent by role.
-    pub fn get(&self, role: AgentRole) -> Option<&dyn SubAgent> {
-        self.agents.get(&role).map(|a| a.as_ref())
+    pub fn get(&self, role: AgentRole) -> Option<Arc<dyn SubAgent>> {
+        self.agents.get(&role).cloned()
     }
 
     /// List all registered agents.
@@ -122,44 +125,58 @@ impl AgentRegistry {
         Ok(agent.execute(ctx).await)
     }
 
-    /// Execute multiple agents in parallel (up to max_concurrent).
+    /// Execute multiple agents in **true parallel** using tokio::spawn.
     pub async fn execute_parallel(
         &self,
         tasks: Vec<(AgentRole, AgentContext)>,
     ) -> Vec<HashMap<String, Value>> {
-        let semaphore = tokio::sync::Semaphore::new(self.max_concurrent);
+        let sem = Arc::new(tokio::sync::Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
 
         for (role, ctx) in tasks {
-            let permit = semaphore.acquire().await;
-            if let Some(agent) = self.agents.get(&role) {
-                // Since we can't move the borrow, we execute sequentially for safety
-                let result = agent.execute(&ctx).await;
-                handles.push(result);
+            if let Some(agent) = self.agents.get(&role).cloned() {
+                let permit = sem.clone().acquire_owned().await;
+                let handle = tokio::spawn(async move {
+                    let _permit = permit; // released when dropped
+                    agent.execute(&ctx).await
+                });
+                handles.push(handle);
             } else {
-                error!(role = role.as_str(), "Agent not found");
+                error!(role = role.as_str(), "Agent not found for parallel exec");
                 let mut err = HashMap::new();
                 err.insert(
                     "error".into(),
                     Value::String(format!("Agent not found: {}", role)),
                 );
-                handles.push(err);
+                handles.push(tokio::spawn(async move { err }));
             }
-            drop(permit);
         }
 
-        handles
+        // Collect all results
+        let mut results = Vec::new();
+        for handle in handles {
+            match handle.await {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    error!("Agent task panicked: {}", e);
+                    let mut err = HashMap::new();
+                    err.insert("error".into(), Value::String(format!("Task panicked: {}", e)));
+                    results.push(err);
+                }
+            }
+        }
+        results
     }
 }
 
 /// Create a registry with default built-in agents.
 pub fn create_default_registry() -> AgentRegistry {
     let mut registry = AgentRegistry::new(3);
-    registry.register(Box::new(AnalyzerAgent));
-    registry.register(Box::new(GeneratorAgent));
-    registry.register(Box::new(PatrolAgent));
-    registry.register(Box::new(ComplianceAgent));
-    registry.register(Box::new(IssueSolverAgent));
+    registry.register(AnalyzerAgent);
+    registry.register(GeneratorAgent);
+    registry.register(PatrolAgent);
+    registry.register(ComplianceAgent);
+    registry.register(IssueSolverAgent);
     registry
 }
 

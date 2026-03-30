@@ -5,7 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use tracing::info;
+
 
 /// ContribAI — AI agent that autonomously contributes to open source.
 #[derive(Parser)]
