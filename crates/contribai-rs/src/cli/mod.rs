@@ -1,13 +1,17 @@
 //! CLI interface for ContribAI.
 //!
-//! Provides hunt, patrol, stats, and mcp-server commands
-//! with rich console output via `colored` and `indicatif`.
+//! Interactive CLI like `claude` / `gemini` — wizard setup, config get/set,
+//! arrow-key menus, and all operations accessible without editing YAML.
+
+pub mod config_editor;
+pub mod wizard;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 
-
 /// ContribAI — AI agent that autonomously contributes to open source.
+///
+/// Run without arguments for interactive menu mode.
 #[derive(Parser)]
 #[command(name = "contribai", version, about, long_about = None)]
 pub struct Cli {
@@ -20,7 +24,7 @@ pub struct Cli {
     verbose: bool,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -132,11 +136,51 @@ enum Commands {
         #[arg(short, long, default_value = "0 */6 * * *")]
         cron: String,
     },
+
+    // ── Interactive / setup commands ──────────────────────────────────────────
+
+    /// Interactive setup wizard — configure provider, API keys, GitHub auth
+    Init {
+        /// Output config file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// Check authentication status for all providers
+    Login,
+
+    /// Get or set configuration values without editing config.yaml
+    ///
+    /// Examples:
+    ///   contribai config-get llm.provider
+    ///   contribai config-set llm.provider vertex
+    ///   contribai config-set github.max_prs_per_day 20
+    ///   contribai config-list
+    ConfigGet {
+        /// Dotted key (e.g. llm.provider, github.max_prs_per_day)
+        key: String,
+    },
+
+    ConfigSet {
+        /// Dotted key (e.g. llm.provider)
+        key: String,
+        /// New value
+        value: String,
+    },
+
+    ConfigList,
 }
+
 
 impl Cli {
     pub async fn run(self) -> anyhow::Result<()> {
-        match self.command {
+        // No subcommand → interactive menu (like `claude` / `gemini`)
+        let command = match self.command {
+            Some(cmd) => cmd,
+            None => run_interactive_menu()?,
+        };
+
+        match command {
             Commands::Run {
                 language,
                 stars,
@@ -670,8 +714,278 @@ impl Cli {
 
                 Ok(())
             }
+
+            // ── Interactive / setup commands ───────────────────────────────────
+
+            Commands::Init { output } => {
+                let out_path = output.as_deref();
+                match wizard::run_init_wizard(out_path.map(std::path::Path::new))? {
+                    Some(result) => wizard::write_wizard_config(&result)?,
+                    None => {} // user aborted
+                }
+                Ok(())
+            }
+
+            Commands::Login => {
+                run_login_check(self.config.as_deref()).await
+            }
+
+            Commands::ConfigGet { key } => {
+                let path = config_editor::resolve_config_path(self.config.as_deref());
+                config_editor::get_config_value(&path, &key)
+            }
+
+            Commands::ConfigSet { key, value } => {
+                let path = config_editor::resolve_config_path(self.config.as_deref());
+                config_editor::set_config_value(&path, &key, &value)
+            }
+
+            Commands::ConfigList => {
+                let path = config_editor::resolve_config_path(self.config.as_deref());
+                config_editor::list_config(&path)
+            }
         }
     }
+}
+
+// ── Interactive menu ──────────────────────────────────────────────────────────
+
+/// Show arrow-key menu when no subcommand given.
+fn run_interactive_menu() -> anyhow::Result<Commands> {
+    use dialoguer::Select;
+    use console::style;
+
+    println!();
+    println!(
+        "  {} — {}",
+        style("ContribAI").cyan().bold(),
+        style("AI Agent for Open Source Contributions").dim()
+    );
+    println!();
+
+    let items = vec![
+        "🚀  Run         — discover repos and submit PRs",
+        "🎯  Target      — analyze a specific repo",
+        "🔍  Analyze     — dry-run analysis only",
+        "🐛  Solve       — solve open issues",
+        "👁   Patrol      — monitor open PRs",
+        "🕵️  Hunt        — aggressive multi-round hunt",
+        "📊  Stats       — contribution statistics",
+        "📋  Status      — show submitted PRs",
+        "🌐  Web server  — start dashboard",
+        "⚙️   Config      — show current config",
+        "🛠   Config set  — change a setting",
+        "🔐  Login       — check auth status",
+        "✨  Init        — setup wizard",
+        "❌  Exit",
+    ];
+
+    let selection = Select::new()
+        .with_prompt("What do you want to do?")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    println!();
+
+    Ok(match selection {
+        0 => Commands::Run { language: None, stars: None, dry_run: false },
+        1 => {
+            let url: String = dialoguer::Input::new()
+                .with_prompt("Repository URL")
+                .interact_text()?;
+            Commands::Target { url, dry_run: false }
+        }
+        2 => {
+            let url: String = dialoguer::Input::new()
+                .with_prompt("Repository URL")
+                .interact_text()?;
+            Commands::Analyze { url }
+        }
+        3 => {
+            let url: String = dialoguer::Input::new()
+                .with_prompt("Repository URL")
+                .interact_text()?;
+            Commands::Solve { url, dry_run: false }
+        }
+        4 => Commands::Patrol { dry_run: false },
+        5 => Commands::Hunt { rounds: 5, delay: 30, language: None, dry_run: false },
+        6 => Commands::Stats,
+        7 => Commands::Status { filter: None, limit: 20 },
+        8 => Commands::WebServer { host: "127.0.0.1".into(), port: 8787 },
+        9 => Commands::Config,
+        10 => {
+            // Config set sub-menu
+            let key: String = dialoguer::Input::new()
+                .with_prompt("Config key (e.g. llm.provider)")
+                .interact_text()?;
+            let value: String = dialoguer::Input::new()
+                .with_prompt(format!("New value for {}", key))
+                .interact_text()?;
+            Commands::ConfigSet { key, value }
+        }
+        11 => Commands::Login,
+        12 => Commands::Init { output: None },
+        _ => std::process::exit(0),
+    })
+}
+
+// ── Login check ───────────────────────────────────────────────────────────────
+
+async fn run_login_check(config_path: Option<&str>) -> anyhow::Result<()> {
+    use console::style;
+
+    print_banner();
+    println!("{}", style("🔐 Authentication Status").cyan().bold());
+    println!("{}", "━".repeat(50).dimmed());
+    println!();
+
+    let config = load_config(config_path).unwrap_or_default();
+
+    // ── GitHub ────────────────────────────────────────────────────────────────
+    if !config.github.token.is_empty() {
+        let last4: String = config.github.token.chars().rev().take(4)
+            .collect::<String>().chars().rev().collect();
+        println!(
+            "  {:<18} {} (token: ****{})",
+            style("GitHub:").bold(),
+            style("✅ Token set").green(),
+            last4
+        );
+    } else {
+        // Try gh CLI
+        let gh_result = if cfg!(target_os = "windows") {
+            std::process::Command::new("cmd")
+                .args(["/c", "gh", "auth", "token"])
+                .output()
+        } else {
+            std::process::Command::new("gh")
+                .args(["auth", "token"])
+                .output()
+        };
+
+        match gh_result {
+            Ok(out) if out.status.success() => {
+                println!(
+                    "  {:<18} {}",
+                    style("GitHub:").bold(),
+                    style("✅ Connected via gh CLI").green()
+                );
+            }
+            _ => {
+                println!(
+                    "  {:<18} {} — set GITHUB_TOKEN or run 'gh auth login'",
+                    style("GitHub:").bold(),
+                    style("❌ Not configured").red()
+                );
+            }
+        }
+    }
+
+    // ── LLM Provider ─────────────────────────────────────────────────────────
+    match config.llm.provider.as_str() {
+        "gemini" | "openai" | "anthropic" => {
+            if !config.llm.api_key.is_empty() {
+                let last4: String = config.llm.api_key.chars().rev().take(4)
+                    .collect::<String>().chars().rev().collect();
+                println!(
+                    "  {:<18} {} ({} key: ****{})",
+                    style("LLM:").bold(),
+                    style("✅ API key set").green(),
+                    config.llm.provider,
+                    last4
+                );
+            } else {
+                println!(
+                    "  {:<18} {} — set {}",
+                    style("LLM:").bold(),
+                    style(format!("❌ {} key missing", config.llm.provider)).red(),
+                    match config.llm.provider.as_str() {
+                        "openai" => "OPENAI_API_KEY",
+                        "anthropic" => "ANTHROPIC_API_KEY",
+                        _ => "GEMINI_API_KEY"
+                    }
+                );
+            }
+        }
+        "vertex" => {
+            // Try to get a gcloud token
+            let token_result = if cfg!(target_os = "windows") {
+                std::process::Command::new("cmd")
+                    .args(["/c", "gcloud", "auth", "print-access-token"])
+                    .output()
+            } else {
+                std::process::Command::new("gcloud")
+                    .args(["auth", "print-access-token"])
+                    .output()
+            };
+
+            let project = if config.llm.vertex_project.is_empty() {
+                std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_default()
+            } else {
+                config.llm.vertex_project.clone()
+            };
+
+            match token_result {
+                Ok(out) if out.status.success() => {
+                    println!(
+                        "  {:<18} {} (project: {})",
+                        style("Vertex AI:").bold(),
+                        style("✅ gcloud token OK").green(),
+                        style(&project).cyan()
+                    );
+                }
+                _ => {
+                    println!(
+                        "  {:<18} {} — run 'gcloud auth application-default login'",
+                        style("Vertex AI:").bold(),
+                        style("❌ gcloud token failed").red()
+                    );
+                }
+            }
+        }
+        "ollama" => {
+            // Check if Ollama is running
+            let ok = std::process::Command::new("curl")
+                .args(["-s", "http://localhost:11434/api/tags"])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if ok {
+                println!(
+                    "  {:<18} {}",
+                    style("Ollama:").bold(),
+                    style("✅ Running on localhost:11434").green()
+                );
+            } else {
+                println!(
+                    "  {:<18} {} — start with 'ollama serve'",
+                    style("Ollama:").bold(),
+                    style("❌ Not running").red()
+                );
+            }
+        }
+        p => {
+            println!("  {:<18} {}", style("LLM:").bold(), style(format!("⚪ Provider: {}", p)).dim());
+        }
+    }
+
+    // ── MCP ───────────────────────────────────────────────────────────────────
+    println!(
+        "  {:<18} {} — start with 'contribai mcp-server'",
+        style("MCP Server:").bold(),
+        style("⚪ Not running (stdio mode)").dim()
+    );
+
+    println!();
+    println!(
+        "  {} Use {} to change settings",
+        style("→").dim(),
+        style("contribai config-set <key> <value>").cyan()
+    );
+    println!();
+
+    Ok(())
 }
 
 fn print_banner() {
