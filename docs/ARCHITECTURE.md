@@ -1,6 +1,6 @@
 # Architecture
 
-ContribAI v2.8.0 — DeerFlow/AgentScope-inspired agent architecture.
+ContribAI v5.1.0 — Rust-native autonomous contribution agent.
 
 ## System Overview
 
@@ -16,7 +16,7 @@ ContribAI v2.8.0 — DeerFlow/AgentScope-inspired agent architecture.
                     └────────────────────┬───────────────────┘
                                          │
             ┌────────────────────────────▼─────────────────────────────┐
-            │                    Sub-Agent Registry                     │
+            │                    Sub-Agent Registry (5)                  │
             │  ┌──────────┐ ┌──────────┐ ┌────────┐ ┌────────────┐   │
             │  │ Analyzer │ │Generator │ │ Patrol │ │ Compliance │   │
             │  └────┬─────┘ └────┬─────┘ └───┬────┘ └─────┬──────┘   │
@@ -24,41 +24,44 @@ ContribAI v2.8.0 — DeerFlow/AgentScope-inspired agent architecture.
                     │            │           │             │
             ┌───────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌─────▼────┐
             │   Skills   │ │  LLM    │ │ GitHub  │ │   DCO    │
-            │ (17 total) │ │  Tool   │ │  Tool   │ │  Signoff │
-            └────────────┘ └─────────┘ └─────────┘ └──────────┘
-                    │            │           │
-                    ▼            ▼           ▼
+            │ (17 total) │ │Provider │ │  REST+  │ │  Signoff │
+            └────────────┘ └─────────┘ │ GraphQL │ └──────────┘
+                    │            │      └─────────┘
+                    ▼            ▼           │
             ┌─────────────────────────────────────────┐
-            │          Outcome Memory (SQLite)          │
+            │          Working Memory (SQLite)          │
             │  analyzed_repos │ submitted_prs           │
             │  pr_outcomes    │ repo_preferences        │
-            │  findings_cache │ run_log                 │
-            │  working_memory │ (auto-load/save, TTL)   │
+            │  findings_cache │ run_log | ci_monitor    │
+            │  working_memory (72h TTL per repo)        │
             └─────────────────────────────────────────┘
                     │                       │
             ┌───────▼────┐         ┌────────▼────────┐
-            │ EventBus   │         │ ContextCompressor│
+            │ EventBus   │         │ContextCompressor │
             │ (15 events)│         │ (LLM + truncate) │
             └────────────┘         └─────────────────┘
 ```
 
 ## Module Map
 
+All source in `crates/contribai-rs/src/`:
+
 | Module | Purpose | Key Files |
 |--------|---------|-----------|
-| `core/` | Config, models, middleware | `config.py`, `models.py`, `middleware.py` |
-| `analysis/` | Code analysis + skills | `analyzer.py`, `skills.py` |
-| `agents/` | Sub-agent registry | `registry.py` |
-| `tools/` | Tool protocol + wrappers | `protocol.py` |
-| `llm/` | Multi-provider LLM | `provider.py`, `context.py` |
-| `github/` | GitHub API + discovery | `client.py`, `discovery.py` |
-| `generator/` | Code generation + review | `engine.py`, `scorer.py` |
-| `pr/` | PR management + patrol | `manager.py`, `patrol.py` |
-| `orchestrator/` | Pipeline + hunt + memory | `pipeline.py`, `memory.py` |
-| `issues/` | Issue solving | `solver.py` |
-| `mcp/` | MCP stdio server (14 tools) | `mcp_server.py` |
-| `web/` | FastAPI dashboard | `app.py`, `api.py` |
-| `cli/` | CLI interface | `main.py` |
+| `cli/` | 22 commands + ratatui TUI | `mod.rs`, `tui.rs`, `wizard.rs`, `config_editor.rs` |
+| `core/` | Config, models, middleware, events | `config.rs`, `events.rs` |
+| `analysis/` | Code analysis + 17 skills | `analyzer.rs`, `skills.rs`, `context_compressor.rs` |
+| `llm/` | Multi-provider LLM + 5 sub-agents | `provider.rs`, `agents.rs` |
+| `github/` | GitHub REST + GraphQL + discovery | `client.rs`, `discovery.rs` |
+| `generator/` | Code generation + self-review + scoring | `engine.rs`, `scorer.rs` |
+| `pr/` | PR lifecycle + patrol | `manager.rs`, `patrol.rs` |
+| `orchestrator/` | Pipeline + hunt + memory | `pipeline.rs`, `memory.rs` |
+| `issues/` | Issue solving | `solver.rs` |
+| `mcp/` | 21-tool MCP server (stdio JSON-RPC) | `server.rs`, `client.rs` |
+| `web/` | axum dashboard + webhooks + auth | `mod.rs` |
+| `sandbox/` | Docker + local code validation | `sandbox.rs` |
+| `scheduler/` | Tokio cron automation | (mod) |
+| `tools/` | MCP-inspired tool protocol | `protocol.rs` |
 
 ## Data Flow
 
@@ -67,11 +70,11 @@ ContribAI v2.8.0 — DeerFlow/AgentScope-inspired agent architecture.
 ```
 1. Discovery      → GitHub Search API finds candidate repos
 2. Analysis       → 7 LLM-powered analyzers run in parallel
-   └── Skills     → Progressive loading by language/framework
+   └── Skills     → 17 progressive skills, language-aware
 3. Validation     → LLM deep-validates findings against file context
 4. Generation     → LLM generates code fix + self-review
 5. Quality Gate   → 7-check scorer (correctness, style, safety, etc.)
-6. PR Creation    → Fork → Branch → Commit (with DCO) → PR
+6. PR Creation    → Fork → Branch → Commit (DCO) → PR
 7. CI Monitor     → Auto-close PRs that fail CI
 ```
 
@@ -127,15 +130,12 @@ sequenceDiagram
 for each open PR:
     1. Fetch reviews + comments
     2. Filter bot comments (11+ known bots)
-    3. Read bot context if maintainer references it
-    4. Classify feedback (CODE_CHANGE, QUESTION, STYLE_FIX, etc.)
-    5. Generate fix via LLM → push commit
-    6. Respond to questions via LLM
+    3. Classify feedback (CODE_CHANGE, QUESTION, STYLE_FIX, etc.)
+    4. Generate fix via LLM → push commit
+    5. Respond to questions via LLM
 ```
 
 ## Middleware Chain
-
-Middlewares run in order for every repo processing:
 
 | Order | Middleware | Purpose |
 |-------|-----------|---------|
@@ -147,10 +147,7 @@ Middlewares run in order for every repo processing:
 
 ## Progressive Skill Loading
 
-Skills are loaded on-demand based on detected language + framework.
-Only relevant skills are injected into the LLM prompt, saving tokens.
-
-**17 built-in skills:**
+17 built-in skills loaded on-demand by language/framework:
 
 | Category | Skills |
 |----------|--------|
@@ -164,84 +161,36 @@ Only relevant skills are injected into the LLM prompt, saving tokens.
 
 **Framework detection** auto-identifies: Django, Flask, FastAPI, Express, React, Next.js, Vue, Svelte, Angular, Spring, Rails.
 
-## Outcome Learning
-
-ContribAI learns from PR outcomes over time:
-
-```sql
--- pr_outcomes: tracks every PR result
-(repo, pr_number, outcome, feedback, time_to_close_hours)
-
--- repo_preferences: auto-computed from outcomes
-(repo, preferred_types, rejected_types, merge_rate, avg_review_hours)
-```
-
-Methods:
-- `record_outcome()` — called when PR is merged/closed/rejected
-- `get_repo_preferences()` — returns learned preferences for a repo
-- `get_rejection_patterns()` — common rejection reasons across all repos
-
 ## Sub-Agent Registry
 
-4 built-in agents, max 3 concurrent:
+5 built-in agents with parallel execution:
 
-| Agent | Role | Wraps |
-|-------|------|-------|
-| `AnalyzerAgent` | Code analysis | `CodeAnalyzer` |
-| `GeneratorAgent` | Fix generation | `ContributionGenerator` |
-| `PatrolAgent` | PR monitoring | `PRPatrol` |
-| `ComplianceAgent` | CLA/DCO/CI | `PRManager` |
+| Agent | Role |
+|-------|------|
+| `AnalyzerAgent` | Code analysis |
+| `GeneratorAgent` | Fix generation |
+| `PatrolAgent` | PR monitoring |
+| `ComplianceAgent` | CLA/DCO/CI |
+| `IssueAgent` | Issue solving |
 
-## Tool Protocol
-
-MCP-inspired tool interface:
-
-```python
-class Tool(Protocol):
-    name: str
-    description: str
-    async def execute(**kwargs) -> ToolResult
-
-# Built-in tools:
-# - GitHubTool: repos, files, PRs, issues, reviews
-# - LLMTool: completion, analysis, classification
-```
-
-## Database Schema
-
-SQLite with 6 tables:
+## Database Schema (SQLite — 7 tables)
 
 | Table | Purpose |
 |-------|---------|
-| `analyzed_repos` | Track which repos have been analyzed |
+| `analyzed_repos` | Track analyzed repositories |
 | `submitted_prs` | All PRs created by ContribAI |
-| `findings_cache` | Cached analysis findings |
-| `run_log` | Pipeline run history |
-| `pr_outcomes` | PR merge/rejection outcomes (v2.4.0) |
-| `repo_preferences` | Learned repo preferences (v2.4.0) |
-
-## Configuration
-
-See `config.yaml` — key sections:
-
-```yaml
-github:        # Token, rate limits, max PRs per day
-llm:           # Provider, model, API key, temperature
-discovery:     # Languages, star range, activity filter
-analysis:      # Enabled analyzers, max file size, skip patterns
-contribution:  # PR style, commit format
-pipeline:      # Concurrent repos, retry settings
-multi_model:   # Task routing strategy
-```
+| `findings_cache` | Cached analysis results (72h TTL) |
+| `run_log` | Pipeline execution history |
+| `pr_outcomes` | PR merge/close outcomes for learning |
+| `repo_preferences` | Learned repo patterns |
+| `ci_monitor` | CI status tracking |
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `AttributeError: 'Finding' has no attribute 'contribution_type'` | `Finding` uses `.type`, `Contribution` uses `.contribution_type` | Use `finding.type` for Finding objects |
-| `429 RESOURCE_EXHAUSTED` during hunt | Gemini API rate limit (multi-round hunts) | `rate_limit_retry` (v2.4.1) auto-retries 5x with 10-120s backoff |
-| Hunt returns 0 repos after first run | Memory dedup filters already-analyzed repos | Delete `~/.contribai/memory.db` or wait for new repos |
-| `gh release create` hangs in PowerShell | Backticks in `--notes` confuse PS parser | Use `--notes-file /tmp/notes.md` instead |
-| Coverage drops below 50% | New modules added without tests | Add tests in `tests/unit/test_<module>.py` |
-| Rich output invisible when piped | Rich buffers to file | Check file size to confirm progress |
-
+| `429 RESOURCE_EXHAUSTED` during hunt | Gemini API rate limit | Reduce rounds, add delay |
+| Hunt returns 0 repos after first run | Memory dedup filters analyzed repos | Delete `~/.contribai/memory.db` |
+| `gh release create` hangs in PowerShell | Backticks/multiline in `--notes` | Use `--notes-file notes.md` instead |
+| `Database locked` | Concurrent access | Wait and retry |
+| Link errors on build | Missing C compiler/OpenSSL | Install `gcc`, `libssl-dev` |

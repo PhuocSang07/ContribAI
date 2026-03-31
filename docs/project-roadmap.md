@@ -1,12 +1,12 @@
 # Project Roadmap
 
-**Current Version:** 5.0.0 | **Release Date:** 2026-03-31 | **Status:** Active Development
+**Current Version:** 5.1.0 | **Release Date:** 2026-04-01 | **Status:** Active Development
 
 ---
 
 ## Executive Summary
 
-ContribAI is a mature autonomous AI contribution system. Originally built in Python (v0.x–v4.0), it was rewritten in Rust (v5.0.0) for performance, safety, and new capabilities like tree-sitter AST parsing and PageRank file ranking. The roadmap focuses on leveraging Rust's advantages for production maturity and ecosystem expansion.
+ContribAI is a mature autonomous AI contribution system. Originally built in Python (v0.x–v4.0), it was rewritten in Rust (v5.0.0) for performance, safety, and new capabilities like tree-sitter AST parsing and PageRank file ranking. v5.1.0 adds an interactive TUI, real notification delivery, and full 22-command CLI parity. The roadmap focuses on leveraging Rust's advantages for production maturity and ecosystem expansion.
 
 ---
 
@@ -70,27 +70,33 @@ ContribAI is a mature autonomous AI contribution system. Originally built in Pyt
 
 **Key Achievements (v5.0.0):**
 - ✓ Complete Python→Rust rewrite: 62 .rs files, ~21,400 LOC, 323 tests
-- ✓ Tokio async runtime (replacing asyncio)
-- ✓ Axum web framework (replacing FastAPI)
-- ✓ Clap CLI with 13 commands (replacing Click)
-- ✓ rusqlite for SQLite (replacing aiosqlite)
-- ✓ serde for serialization (replacing Pydantic)
+- ✓ Tokio async runtime (replacing Python asyncio)
+- ✓ Axum web framework (replacing Python FastAPI)
+- ✓ Clap CLI with 21 commands (replacing Python Click)
+- ✓ rusqlite for SQLite (replacing Python aiosqlite)
+- ✓ serde for serialization (replacing Python Pydantic)
 - ✓ MCP server expanded: 21 tools (was 14)
-- ✓ MCP client: StdioMcpClient for external servers
 - ✓ API key auth with constant-time comparison
 - ✓ HMAC-SHA256 webhook verification
-- ✓ 17 analysis skills (5 new: express_security, docs, ui_ux, performance, refactor)
-- ✓ **Rust-only features:**
-  - Tree-sitter AST parsing (8 languages: Rust, Python, JS, TS, Go, Java, C, C++)
-  - PageRank file importance ranking via import graph
-  - 12-signal triage engine for issue scoring
-  - 3-tier context compression with 5-language signature extraction
-  - Language-specific analysis rules
-  - Contribution leaderboard
+- ✓ 17 analysis skills (5 new vs Python)
 
 ---
 
-## Feature Status Matrix (v5.0.0)
+### v5.1.0 (2026-04-01) — Interactive TUI & Full CLI Parity ✓
+
+**Key Achievements (v5.1.0):**
+- ✓ Interactive TUI: ratatui 4-tab browser (Dashboard/PRs/Repos/Actions)
+- ✓ Real `notify-test`: live HTTP to Slack, Discord, Telegram
+- ✓ Full 22-command CLI (init, login, leaderboard, models, templates, profile, config-get/set/list, system-status, notify-test)
+- ✓ Setup wizard (`contribai init`)
+- ✓ Config editor (`config-get`, `config-set`, `config-list`)
+- ✓ 63 .rs files, ~22,000 LOC, **335 tests**
+- ✓ Python moved to `python/` (v4.1.0 legacy, preserved for reference)
+- ✓ Root `Cargo.toml` workspace — `cargo build` from project root
+
+---
+
+## Feature Status Matrix (v5.1.0)
 
 ### Core Pipeline
 
@@ -140,7 +146,7 @@ ContribAI is a mature autonomous AI contribution system. Originally built in Pyt
 | Feature | Status | Details |
 |---------|--------|---------|
 | Event bus | ✓ Complete | 18 typed events, JSONL file logging |
-| Sub-agent registry | ✓ Complete | 4 agents (Analyzer, Generator, Patrol, Compliance) |
+| Sub-agent registry | ✓ Complete | 5 agents (Analyzer, Generator, Patrol, Compliance, Issue) |
 | Context compression | ✓ Complete | 3-tier with language-aware signature extraction |
 | Working memory | ✓ Complete | Per-repo cache with 72h TTL |
 | Outcome learning | ✓ Complete | PR outcome tracking + repo preferences |
@@ -162,16 +168,23 @@ ContribAI is a mature autonomous AI contribution system. Originally built in Pyt
 - ✓ MCP server, enhanced code gen, security hardening, comprehensive docs
 
 ### Milestone 4: Rust Rewrite (v5.0.0) ✓
-- ✓ Full feature parity with Python (99%+, only plugin discovery differs by design)
+- ✓ Full feature parity with Python (99%+)
 - ✓ New Rust-only capabilities (tree-sitter, PageRank, triage, compression)
-- ✓ 62 files, ~21,400 LOC, 323 tests
-- ✓ Single static binary deployment
+- ✓ 62 files, ~21,400 LOC, 323 tests, single static binary
+
+### Milestone 5: Full CLI Parity + TUI (v5.1.0) ✓
+- ✓ 22 CLI commands (was 21)
+- ✓ Interactive ratatui TUI browser
+- ✓ Real notification testing (Slack, Discord, Telegram)
+- ✓ Setup wizard + config editor commands
+- ✓ Python moved to `python/` legacy, root Cargo workspace
+- ✓ 335 tests
 
 ---
 
-## Planned Features (v5.1+)
+## Planned Features (v5.2+)
 
-### v5.1.0 — Enterprise Scalability (Q2 2026)
+### v5.2.0 — Enterprise Scalability (Q2 2026)
 
 - [ ] PostgreSQL migration layer (drop-in SQLite replacement)
 - [ ] Redis-based distributed rate limiting
@@ -222,7 +235,6 @@ ContribAI is a mature autonomous AI contribution system. Originally built in Pyt
 | Add database indexes for performance | Small | High |
 | Implement integration test suite | Medium | High |
 | Add structured OpenTelemetry spans | Medium | Medium |
-| Implement interactive TUI mode | Large | Low |
 
 ---
 
@@ -244,21 +256,21 @@ ContribAI is a mature autonomous AI contribution system. Originally built in Pyt
 
 | Metric | v4.0 (Python) | v5.0 (Rust) | Target (v5.1) |
 |--------|---------------|-------------|----------------|
-| **LOC** | ~5,500 | ~21,400 | — |
-| **Test count** | ~298 | 323 | 400+ |
-| **Binary size** | N/A (interpreted) | ~15MB static | — |
-| **Startup time** | ~2s | <100ms | — |
-| **Memory usage** | ~80MB | ~20MB | — |
-| **MCP tools** | 14 | 21 | 25+ |
-| **CLI commands** | 8 | 13 | 15+ |
-| **Analysis skills** | 12 | 17 | 20+ |
-| **AST languages** | 0 | 8 | 12+ |
+| **LOC** | ~5,500 | ~21,400 | ~22,000 |
+| **Test count** | ~298 | 323 | **335** |
+| **Binary size** | N/A (interpreted) | ~15MB static | ~4.5MB stripped |
+| **Startup time** | ~2s | <100ms | ~5ms |
+| **Memory usage** | ~80MB | ~20MB | ~8MB |
+| **MCP tools** | 14 | 21 | 21 |
+| **CLI commands** | 8 | 21 | **22** |
+| **Analysis skills** | 12 | 17 | 17 |
+| **AST languages** | 0 | 8 | 8 |
 
 ---
 
 ## Document Metadata
 
 - **Created:** 2026-03-28
-- **Last Updated:** 2026-03-31
-- **Version:** 5.0.0 (Rust rewrite)
+- **Last Updated:** 2026-04-01
+- **Version:** 5.1.0 (TUI + full CLI parity)
 - **Next Review:** 2026-06-30 (Q2 end)

@@ -1,6 +1,6 @@
 # System Architecture
 
-**Version:** 5.0.0 | **Language:** Rust | **Last Updated:** 2026-03-31
+**Version:** 5.1.0 | **Language:** Rust | **Last Updated:** 2026-04-01
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ContribAI Pipeline (v5.0.0 Rust)             │
+│                    ContribAI Pipeline (v5.1.0 Rust)             │
 └─────────────────────────────────────────────────────────────────┘
 
 Input: GitHub Repository (URL or discovery)
@@ -118,7 +118,7 @@ pub trait Middleware: Send + Sync {
 
 ## Sub-Agent Registry
 
-4 specialized agents with parallel execution via Tokio:
+5 specialized agents with parallel execution via Tokio:
 
 | Agent | Role | Wraps | Max Concurrent |
 |-------|------|-------|----------------|
@@ -126,6 +126,7 @@ pub trait Middleware: Send + Sync {
 | `GeneratorAgent` | Fix generation | `ContributionGenerator` | 3 |
 | `PatrolAgent` | PR monitoring | `PRPatrol` | 1 |
 | `ComplianceAgent` | CLA/DCO/CI | `PRManager` | 3 |
+| `IssueAgent` | Issue solving | `IssueSolver` | 2 |
 
 ```rust
 // Parallel execution with tokio
@@ -490,5 +491,5 @@ pub enum ContribAIError {
 ## Document Metadata
 
 - **Created:** 2026-03-28
-- **Last Updated:** 2026-03-31
-- **Version:** 5.0.0 (Rust rewrite)
+- **Last Updated:** 2026-04-01
+- **Version:** 5.1.0 (Interactive TUI + full CLI parity)
